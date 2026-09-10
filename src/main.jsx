@@ -149,10 +149,20 @@ function App() {
   const [showSearch, setShowSearch] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [settingsPage, setSettingsPage] = useState(null);
+  const [editProfile, setEditProfile] = useState(false);
   const [showAddFamily, setShowAddFamily] = useState(false);
   const [editingMember, setEditingMember] = useState(null);
   const [activePerson, setActivePerson] = useState('Phalguna Rao BAMMIDI');
   const [familyList, setFamilyList] = useState(familyMembers);
+  const [profileDetails, setProfileDetails] = useState({
+    fullName: 'Phalguna Rao BAMMIDI',
+    dateOfBirth: '',
+    gender: '',
+    bloodGroup: '',
+    height: '',
+    weight: '',
+    emergencyContact: '',
+  });
   const [items, setItems] = useState(records);
 
   const addRecord = (type, details) => {
@@ -191,11 +201,11 @@ function App() {
         {tab === 'Home' && <HomeScreen activePerson={activePerson} setActivePerson={setActivePerson} items={items} onAdd={() => setShowAdd(true)} showNotifications={showNotifications} toggleNotifications={() => setShowNotifications(open => !open)} />}
         {tab === 'Records' && <RecordsScreen items={items} searchTerm={searchTerm} setSearchTerm={setSearchTerm} onAdd={() => setShowAdd(true)} />}
         {tab === 'Family' && (showAddFamily ? <AddFamilyMemberPage onBack={() => setShowAddFamily(false)} onSave={(member) => { setFamilyList(current => [...current, member]); setActivePerson(member.name); setShowAddFamily(false); }} /> : editingMember ? <EditFamilyMemberPage member={editingMember} onBack={() => setEditingMember(null)} onSave={(updatedMember) => { setFamilyList(current => current.map(member => member.name === editingMember.name ? updatedMember : member)); setActivePerson(updatedMember.name); setEditingMember(null); }} onDelete={() => { const remaining = familyList.filter(member => member.name !== editingMember.name); setFamilyList(remaining); setActivePerson(remaining[0]?.name || ''); setEditingMember(null); }} /> : <FamilyScreen activePerson={activePerson} setActivePerson={setActivePerson} familyList={familyList} onAddMember={() => setShowAddFamily(true)} onOpenMember={setEditingMember} />)}
-        {tab === 'Profile' && (settingsPage ? <SettingsPage page={settingsPage} activePerson={activePerson} items={items} onBack={() => setSettingsPage(null)} /> : <ProfileScreen activePerson={activePerson} onLogout={() => setAuthenticated(false)} openSettings={setSettingsPage} />)}
+        {tab === 'Profile' && (editProfile ? <EditProfilePage details={profileDetails} onBack={() => setEditProfile(false)} onSave={(details) => { setProfileDetails(details); setActivePerson(details.fullName); setEditProfile(false); }} /> : settingsPage ? <SettingsPage page={settingsPage} activePerson={activePerson} items={items} onBack={() => setSettingsPage(null)} /> : <ProfileScreen activePerson={activePerson} profileDetails={profileDetails} onLogout={() => setAuthenticated(false)} openSettings={setSettingsPage} openEditProfile={() => setEditProfile(true)} />)}
       </div>
 
       <nav className="bottom-nav">
-        {[['Home', Home], ['Records', FileText], ['Family', Users], ['Profile', Settings]].map(([label, Icon]) => <button key={label} onClick={() => { setSettingsPage(null); setShowAddFamily(false); setEditingMember(null); setTab(label); }} className={tab === label ? 'nav-active' : ''}><Icon size={20}/><span>{label}</span></button>)}
+        {[['Home', Home], ['Records', FileText], ['Family', Users], ['Profile', Settings]].map(([label, Icon]) => <button key={label} onClick={() => { setSettingsPage(null); setEditProfile(false); setShowAddFamily(false); setEditingMember(null); setTab(label); }} className={tab === label ? 'nav-active' : ''}><Icon size={20}/><span>{label}</span></button>)}
       </nav>
 
       {showAdd && <AddSheet close={() => setShowAdd(false)} addRecord={addRecord} />}
@@ -354,10 +364,18 @@ function EditFamilyMemberPage({ member, onBack, onSave, onDelete }) {
   return <><div className="add-family-page"><button className="settings-back" onClick={onBack}><ArrowLeft size={18}/>Back to family</button><div className="add-family-heading"><span className="large-avatar">{initials}</span><p className="eyebrow">FAMILY PROFILE</p><h1>Update details</h1><p>Edit this member's profile information.</p></div><form className="family-form" onSubmit={submit}><label htmlFor="edit-family-name">FULL NAME</label><input id="edit-family-name" value={name} onChange={event => setName(event.target.value)} required/><label htmlFor="edit-family-relationship">RELATIONSHIP</label><input id="edit-family-relationship" value={relationship} onChange={event => setRelationship(event.target.value)} placeholder="e.g. Daughter, parent, spouse"/><button className="auth-primary" type="submit"><Check size={18}/>Save changes</button></form><button className="delete-member-button" onClick={() => setShowDeleteConfirm(true)}><LogOut size={16}/>Delete family member</button></div>{showDeleteConfirm && <div className="confirm-backdrop" role="presentation" onClick={() => setShowDeleteConfirm(false)}><section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-family-title" onClick={event => event.stopPropagation()}><span className="confirm-icon"><LogOut size={20}/></span><h2 id="delete-family-title">Delete family member?</h2><p>This will remove {member.name}'s profile and family access from this device.</p><div className="confirm-actions"><button className="confirm-cancel" onClick={() => setShowDeleteConfirm(false)}>Cancel</button><button className="confirm-delete" onClick={onDelete}>Delete profile</button></div></section></div>}</>;
 }
 
-function ProfileScreen({ activePerson, onLogout, openSettings }) {
-  const initials = activePerson.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase();
+function ProfileScreen({ activePerson, profileDetails, onLogout, openSettings, openEditProfile }) {
+  const displayName = profileDetails.fullName || activePerson;
+  const initials = displayName.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase();
 
-  return <><div className="profile-hero"><span className="large-avatar">{initials}</span><h1>{activePerson}</h1><span>Personal health space</span><button>Edit profile</button></div><div className="settings-list">{[[ShieldCheck,'Privacy & security','privacy'],[Bell,'Notifications','notifications'],[Users,'Sharing & family access','sharing'],[FileText,'Export my records','export']].map(([Icon,label,page])=><button key={label} onClick={() => openSettings(page)}><span><Icon size={20}/>{label}</span><ChevronRight size={18}/></button>)}</div><button className="logout-button" onClick={onLogout}><LogOut size={16}/>Log out</button><p className="profile-version">FamilyHealth v1.0 · Your data stays yours</p></>;
+  return <><div className="profile-hero"><span className="large-avatar">{initials}</span><h1>{displayName}</h1><span>Personal health space</span><button onClick={openEditProfile}>Edit profile</button></div><div className="settings-list">{[[ShieldCheck,'Privacy & security','privacy'],[Bell,'Notifications','notifications'],[Users,'Sharing & family access','sharing'],[FileText,'Export my records','export']].map(([Icon,label,page])=><button key={label} onClick={() => openSettings(page)}><span><Icon size={20}/>{label}</span><ChevronRight size={18}/></button>)}</div><button className="logout-button" onClick={onLogout}><LogOut size={16}/>Log out</button><p className="profile-version">FamilyHealth v1.0 · Your data stays yours</p></>;
+}
+
+function EditProfilePage({ details, onBack, onSave }) {
+  const [form, setForm] = useState(details);
+  const update = (field) => (event) => setForm(current => ({ ...current, [field]: event.target.value }));
+
+  return <div className="edit-profile-page"><button className="settings-back" onClick={onBack}><ArrowLeft size={18}/>Back to profile</button><div className="edit-profile-heading"><span className="large-avatar">{form.fullName.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase() || '?'}</span><p className="eyebrow">PROFILE DETAILS</p><h1>Edit profile</h1><p>Keep your demographic and basic health information current.</p></div><form className="profile-form" onSubmit={event => { event.preventDefault(); onSave(form); }}><label htmlFor="profile-full-name">FULL NAME</label><input id="profile-full-name" value={form.fullName} onChange={update('fullName')} required/><div className="profile-form-grid"><div><label htmlFor="profile-dob">DATE OF BIRTH</label><input id="profile-dob" type="date" value={form.dateOfBirth} onChange={update('dateOfBirth')} /></div><div><label htmlFor="profile-gender">GENDER</label><select id="profile-gender" value={form.gender} onChange={update('gender')}><option value="">Select</option><option>Female</option><option>Male</option><option>Non-binary</option><option>Prefer not to say</option></select></div></div><div className="profile-form-grid"><div><label htmlFor="profile-blood">BLOOD GROUP</label><select id="profile-blood" value={form.bloodGroup} onChange={update('bloodGroup')}><option value="">Select</option><option>A+</option><option>A-</option><option>B+</option><option>B-</option><option>AB+</option><option>AB-</option><option>O+</option><option>O-</option></select></div><div><label htmlFor="profile-height">HEIGHT</label><input id="profile-height" value={form.height} onChange={update('height')} placeholder="e.g. 170 cm" /></div></div><label htmlFor="profile-weight">WEIGHT</label><input id="profile-weight" value={form.weight} onChange={update('weight')} placeholder="e.g. 68 kg"/><label htmlFor="profile-emergency">EMERGENCY CONTACT</label><input id="profile-emergency" value={form.emergencyContact} onChange={update('emergencyContact')} placeholder="Name and phone number"/><button className="auth-primary" type="submit"><Check size={18}/>Save profile</button></form></div>;
 }
 
 function SettingsPage({ page, activePerson, items, onBack }) {
