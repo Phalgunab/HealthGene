@@ -1,0 +1,14 @@
+.google-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  font-family: Arial, sans-serif;
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1;
+  background: conic-gradient(from -45deg, #4285f4 0 25%, #34a853 25% 50%, #fbbc05 50% 75%, #ea4335 75% 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}

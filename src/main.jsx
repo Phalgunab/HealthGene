@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import './styles.css';
 import './logout.css';
+import './google.css';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
 
@@ -210,7 +211,7 @@ function AuthScreen({ onAuthenticated }) {
   return <main className="auth-shell"><section className="auth-card form-card">
     <button className="back-button" onClick={() => setScreen('welcome')}><ArrowLeft size={20}/></button><AuthBrand compact />
     <div className="form-heading"><p className="eyebrow">{screen === 'signup' ? 'WELCOME TO FAMILYHEALTH' : 'YOUR HEALTH SPACE'}</p><h1>{title}</h1><p>{screen === 'signup' ? 'Start building your secure health history.' : 'Sign in to see your health story.'}</p></div>
-    <button className="google-button" onClick={onAuthenticated}><span className="google-mark">G</span><span>Continue with Google</span></button>
+    <button className="google-button" onClick={onAuthenticated}><span className="google-mark" aria-hidden="true">G</span><span>Continue with Google</span></button>
     <div className="divider"><span/>or continue with phone<span/></div>
     <form onSubmit={submitPhone}><label className="field-label" htmlFor="phone">PHONE NUMBER</label><div className="phone-field"><span>+1</span><input id="phone" type="tel" inputMode="tel" placeholder="(555) 000-0000" value={phone} onChange={e => setPhone(e.target.value)} required/></div>
       <button className="auth-primary" type="submit">{screen === 'signup' ? 'Continue with phone' : 'Send sign-in code'} <ArrowUpRight size={18}/></button></form>
