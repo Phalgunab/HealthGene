@@ -13,6 +13,7 @@ import './google.css';
 import './phone.css';
 import './legal.css';
 import './notifications.css';
+import './search.css';
 
 const countryCodes = [
   ['India (+91)', '+91'],
@@ -41,6 +42,8 @@ const notifications = [
   { id: 2, title: 'Appointment reminder', detail: 'Dental cleaning scheduled for October 14.', time: '2 hours ago', unread: true },
   { id: 3, title: 'Record saved privately', detail: 'Knee MRI scan was added to Swetha NAYANI’s timeline.', time: 'Yesterday', unread: false },
 ];
+
+const searchExamples = ['Fever in last month', 'Apollo visit last month', 'Lab reports for Swetha'];
 
 const recordKindConfig = {
   Scan: { title: 'Medical scan', source: 'Document scanned', tone: 'blue', icon: Camera },
@@ -149,6 +152,8 @@ function App() {
   const [showAdd, setShowAdd] = useState(false);
   const [showNotice, setShowNotice] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
   const [activePerson, setActivePerson] = useState('Phalguna Rao BAMMIDI');
   const [items, setItems] = useState(records);
 
@@ -179,12 +184,14 @@ function App() {
     <section className="mobile-app">
       <header className="topbar">
         <div className="brand"><span className="brand-mark"><HeartPulse size={17}/></span><span>FamilyHealth</span></div>
-        <div className="top-actions"><button className="icon-button" aria-label="Search"><Search size={20}/></button><button className="avatar" onClick={() => setTab('Profile')} aria-label="Profile">MP</button></div>
+        <div className="top-actions"><button className="icon-button" onClick={() => setShowSearch(open => !open)} aria-label="Search" aria-expanded={showSearch}><Search size={20}/></button><button className="avatar" onClick={() => setTab('Profile')} aria-label="Profile">MP</button></div>
       </header>
+
+      {showSearch && <SearchPanel searchTerm={searchTerm} setSearchTerm={setSearchTerm} chooseExample={(example) => { setSearchTerm(example); setShowSearch(false); setTab('Records'); }} />}
 
       <div className="content">
         {tab === 'Home' && <HomeScreen activePerson={activePerson} setActivePerson={setActivePerson} items={items} onAdd={() => setShowAdd(true)} showNotifications={showNotifications} toggleNotifications={() => setShowNotifications(open => !open)} />}
-        {tab === 'Records' && <RecordsScreen items={items} onAdd={() => setShowAdd(true)} />}
+        {tab === 'Records' && <RecordsScreen items={items} searchTerm={searchTerm} setSearchTerm={setSearchTerm} onAdd={() => setShowAdd(true)} />}
         {tab === 'Family' && <FamilyScreen activePerson={activePerson} setActivePerson={setActivePerson} />}
         {tab === 'Profile' && <ProfileScreen activePerson={activePerson} onLogout={() => setAuthenticated(false)} />}
       </div>
@@ -247,6 +254,14 @@ function NotificationPanel() {
   </section>;
 }
 
+function SearchPanel({ searchTerm, setSearchTerm, chooseExample }) {
+  return <section className="search-panel" aria-label="Search health records">
+    <div className="search-panel-input"><Search size={17}/><input autoFocus value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder="Search health records" /></div>
+    <p className="search-examples-label">TRY A FILTER</p>
+    <div className="search-examples">{searchExamples.map(example => <button type="button" key={example} onClick={() => chooseExample(example)}>{example}</button>)}</div>
+  </section>;
+}
+
 function LegalDialog({ page, close }) {
   const isTerms = page === 'terms';
 
@@ -301,7 +316,13 @@ function HomeScreen({ activePerson, setActivePerson, items, onAdd, showNotificat
 
 function RecordRow({ record }) { const Icon = record.icon; return <button className="record-row"><div className={`record-icon ${record.tone}`}><Icon size={19}/></div><div className="record-copy"><b>{record.title}</b><span>{record.source}</span></div><div className="record-date">{record.date}<ChevronRight size={16}/></div></button> }
 
-function RecordsScreen({ items, onAdd }) { return <><div className="page-title"><p className="eyebrow">YOUR LIBRARY</p><h1>Health records</h1><span>Everything, in one secure place.</span></div><div className="search-box"><Search size={18}/><span>Search records</span></div><div className="filter-row"><button className="selected-filter">All records</button><button>Reports</button><button>Labs</button><button>Images</button></div><div className="record-list">{items.concat([{title:'COVID-19 vaccination', source:'Central Medical Centre', date:'Jul 28', tone:'mint', icon: ShieldCheck}]).map((r,i)=><RecordRow record={r} key={i}/>)}</div><button className="floating-add" onClick={onAdd}><Plus size={21}/>Add record</button></> }
+function RecordsScreen({ items, searchTerm, setSearchTerm, onAdd }) {
+  const allItems = items.concat([{title:'COVID-19 vaccination', source:'Central Medical Centre', date:'Jul 28', tone:'mint', icon: ShieldCheck}]);
+  const normalizedSearch = searchTerm.toLowerCase().trim();
+  const filteredItems = normalizedSearch ? allItems.filter(record => [record.title, record.source, record.owner, record.hospital, record.doctor, record.notes].filter(Boolean).join(' ').toLowerCase().includes(normalizedSearch)) : allItems;
+
+  return <><div className="page-title"><p className="eyebrow">YOUR LIBRARY</p><h1>Health records</h1><span>Everything, in one secure place.</span></div><div className="search-box"><Search size={18}/><input aria-label="Search records" value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder="Search records" /></div>{searchTerm && <p className="search-result-label">Showing results for “{searchTerm}”</p>}<div className="filter-row"><button className="selected-filter">All records</button><button>Reports</button><button>Labs</button><button>Images</button></div><div className="record-list">{filteredItems.length ? filteredItems.map((record, index) => <RecordRow record={record} key={index}/>) : <div className="empty-search">No matching records yet.</div>}</div><button className="floating-add" onClick={onAdd}><Plus size={21}/>Add record</button></>;
+}
 
 function FamilyScreen({ activePerson, setActivePerson }) {
   const people = familyMembers.map(({ name, initial, tone }) => [initial, name, tone]);
