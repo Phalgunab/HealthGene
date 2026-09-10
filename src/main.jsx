@@ -250,6 +250,7 @@ function AuthScreen() {
       'auth/unauthorized-domain': 'This website is not authorized in Firebase. Add phalgunab.github.io under Authentication → Settings → Authorized domains.',
       'auth/popup-closed-by-user': 'Google sign-in was cancelled.',
       'auth/invalid-phone-number': 'Enter a valid phone number with the selected country code.',
+      'auth/invalid-verification-code': 'That verification code is invalid or expired. Enter the latest 6-digit code from your SMS, or request a new code.',
     };
     setAuthError(messages[error?.code] || error?.message || 'Authentication failed. Please try again.');
   };
