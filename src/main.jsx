@@ -10,6 +10,17 @@ import {
 import './styles.css';
 import './logout.css';
 import './google.css';
+import './phone.css';
+
+const countryCodes = [
+  ['United States (+1)', '+1'],
+  ['India (+91)', '+91'],
+  ['United Kingdom (+44)', '+44'],
+  ['Canada (+1)', '+1'],
+  ['Australia (+61)', '+61'],
+  ['Singapore (+65)', '+65'],
+  ['United Arab Emirates (+971)', '+971'],
+];
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
 
@@ -187,6 +198,7 @@ function App() {
 function AuthScreen({ onAuthenticated }) {
   const [screen, setScreen] = useState('welcome');
   const [phone, setPhone] = useState('');
+  const [countryCode, setCountryCode] = useState('+1');
   const [code, setCode] = useState('');
   const title = screen === 'signup' ? 'Create your account' : 'Welcome back';
   const submitPhone = (event) => { event.preventDefault(); setScreen('verify'); };
@@ -202,7 +214,7 @@ function AuthScreen({ onAuthenticated }) {
 
   if (screen === 'verify') return <main className="auth-shell"><section className="auth-card form-card verify-card">
     <button className="back-button" onClick={() => setScreen('signup')}><ArrowLeft size={20}/></button><AuthBrand compact />
-    <div className="form-heading"><div className="verification-icon"><Smartphone size={25}/></div><h1>Check your messages</h1><p>We sent a 6-digit code to <b>{phone || '+1 (555) 000-0000'}</b>.</p></div>
+    <div className="form-heading"><div className="verification-icon"><Smartphone size={25}/></div><h1>Check your messages</h1><p>We sent a 6-digit code to <b>{phone ? `${countryCode} ${phone}` : `${countryCode} (555) 000-0000`}</b>.</p></div>
     <form onSubmit={(e) => { e.preventDefault(); onAuthenticated(); }}><label className="field-label">VERIFICATION CODE</label><input aria-label="Verification code" className="code-input" inputMode="numeric" maxLength="6" placeholder="• • • • • •" value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ''))} autoFocus/>
       <button className="auth-primary" type="submit">Verify and continue <Check size={18}/></button></form>
     <button className="resend-button" onClick={() => setCode('')}>Didn't receive a code? <b>Resend</b></button><button className="change-number" onClick={() => setScreen('signup')}>Use a different number</button>
@@ -213,7 +225,7 @@ function AuthScreen({ onAuthenticated }) {
     <div className="form-heading"><p className="eyebrow">{screen === 'signup' ? 'WELCOME TO FAMILYHEALTH' : 'YOUR HEALTH SPACE'}</p><h1>{title}</h1><p>{screen === 'signup' ? 'Start building your secure health history.' : 'Sign in to see your health story.'}</p></div>
     <button className="google-button" onClick={onAuthenticated}><span className="google-mark" aria-hidden="true">G</span><span>Continue with Google</span></button>
     <div className="divider"><span/>or continue with phone<span/></div>
-    <form onSubmit={submitPhone}><label className="field-label" htmlFor="phone">PHONE NUMBER</label><div className="phone-field"><span>+1</span><input id="phone" type="tel" inputMode="tel" placeholder="(555) 000-0000" value={phone} onChange={e => setPhone(e.target.value)} required/></div>
+    <form onSubmit={submitPhone}><label className="field-label" htmlFor="phone">PHONE NUMBER</label><div className="phone-field"><label className="country-select"><span className="sr-only">Country code</span><select value={countryCode} onChange={e => setCountryCode(e.target.value)}>{countryCodes.map(([country, codeValue]) => <option value={codeValue} key={`${country}-${codeValue}`}>{country}</option>)}</select></label><input id="phone" type="tel" inputMode="tel" placeholder="(555) 000-0000" value={phone} onChange={e => setPhone(e.target.value)} required/></div>
       <button className="auth-primary" type="submit">{screen === 'signup' ? 'Continue with phone' : 'Send sign-in code'} <ArrowUpRight size={18}/></button></form>
     <p className="terms-copy">By continuing, you agree to our <button>Terms of Use</button> and <button>Privacy Policy</button>.</p>
     <div className="switch-auth">{screen === 'signup' ? 'Already have an account?' : 'New to FamilyHealth?'} <button onClick={() => setScreen(screen === 'signup' ? 'signin' : 'signup')}>{screen === 'signup' ? 'Sign in' : 'Create an account'}</button></div>
