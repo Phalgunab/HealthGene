@@ -8,8 +8,9 @@ import {
   Search, Settings, ShieldCheck, Sparkles, Upload, Users, X, ArrowLeft, Check, Smartphone, LogOut
 } from 'lucide-react';
 import './styles.css';
-import { auth, googleProvider } from './firebase';
+import { auth, db, googleProvider } from './firebase';
 import { onAuthStateChanged, RecaptchaVerifier, signInWithPhoneNumber, signInWithPopup, signOut } from 'firebase/auth';
+import { addDoc, collection, deleteDoc, doc, getDocs, getDoc, setDoc, writeBatch } from 'firebase/firestore';
 
 const countryCodes = [
   ['India (+91)', '+91'],
@@ -60,6 +61,13 @@ const createRecordForm = (type = 'Scan') => ({
   doctor: '',
   amount: '',
   notes: '',
+});
+
+const serializeRecord = ({ icon, ...record }) => record;
+const hydrateRecord = (id, record) => ({
+  id,
+  ...record,
+  icon: recordKindConfig[record.type]?.icon || (record.kind === 'lab' ? Activity : record.kind === 'image' ? Image : FileText),
 });
 
 const parseIncomingMessage = (message = '') => {
@@ -150,6 +158,7 @@ const handleUploadedDocument = async (file, setForm) => {
 function App() {
   const [authenticated, setAuthenticated] = useState(false);
   const [authReady, setAuthReady] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
   const [tab, setTab] = useState('Home');
   const [showAdd, setShowAdd] = useState(false);
   const [showNotice, setShowNotice] = useState(false);
@@ -178,9 +187,41 @@ function App() {
   const activeInitials = activePerson.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase();
 
   useEffect(() => onAuthStateChanged(auth, (user) => {
+    setCurrentUser(user);
     setAuthenticated(Boolean(user));
     setAuthReady(true);
   }), []);
+
+  useEffect(() => {
+    if (!currentUser) return undefined;
+
+    const loadFirestoreData = async () => {
+      try {
+        const userRef = doc(db, 'users', currentUser.uid);
+        const [profileSnapshot, familySnapshot, recordsSnapshot] = await Promise.all([
+          getDoc(doc(userRef, 'profile', 'details')),
+          getDocs(collection(userRef, 'familyMembers')),
+          getDocs(collection(userRef, 'records')),
+        ]);
+
+        if (profileSnapshot.exists()) setProfileDetails(current => ({ ...current, ...profileSnapshot.data() }));
+        if (!familySnapshot.empty) setFamilyList(familySnapshot.docs.map(snapshot => ({ id: snapshot.id, ...snapshot.data() })));
+        if (!recordsSnapshot.empty) setItems(recordsSnapshot.docs.map(snapshot => hydrateRecord(snapshot.id, snapshot.data())));
+
+        if (!profileSnapshot.exists() || familySnapshot.empty || recordsSnapshot.empty) {
+          const batch = writeBatch(db);
+          if (!profileSnapshot.exists()) batch.set(doc(userRef, 'profile', 'details'), profileDetails);
+          if (familySnapshot.empty) familyMembers.forEach(member => batch.set(doc(collection(userRef, 'familyMembers')), member));
+          if (recordsSnapshot.empty) records.forEach(record => batch.set(doc(collection(userRef, 'records')), serializeRecord(record)));
+          await batch.commit();
+        }
+      } catch (error) {
+        console.error('Could not load Firestore data', error);
+      }
+    };
+
+    loadFirestoreData();
+  }, [currentUser]);
 
   const addRecord = (type, details) => {
     const config = recordKindConfig[type] ?? recordKindConfig.Scan;
@@ -198,9 +239,39 @@ function App() {
     };
 
     setItems([record, ...items]);
+    if (currentUser) addDoc(collection(db, 'users', currentUser.uid, 'records'), serializeRecord(record)).catch(error => console.error('Could not save record', error));
     setShowAdd(false);
     setShowNotice(true);
     setTimeout(() => setShowNotice(false), 2800);
+  };
+
+  const saveProfile = async (details) => {
+    setProfileDetails(details);
+    setActivePerson(details.fullName);
+    setEditProfile(false);
+    if (currentUser) await setDoc(doc(db, 'users', currentUser.uid, 'profile', 'details'), details, { merge: true });
+  };
+
+  const addFamilyMember = async (member) => {
+    setFamilyList(current => [...current, member]);
+    setActivePerson(member.name);
+    setShowAddFamily(false);
+    if (currentUser) await setDoc(doc(collection(db, 'users', currentUser.uid, 'familyMembers')), member);
+  };
+
+  const updateFamilyMember = async (updatedMember, originalName) => {
+    setFamilyList(current => current.map(member => member.name === originalName ? updatedMember : member));
+    setActivePerson(updatedMember.name);
+    setEditingMember(null);
+    if (currentUser && updatedMember.id) await setDoc(doc(db, 'users', currentUser.uid, 'familyMembers', updatedMember.id), updatedMember, { merge: true });
+  };
+
+  const deleteFamilyMember = async (member) => {
+    const remaining = familyList.filter(item => item.name !== member.name);
+    setFamilyList(remaining);
+    setActivePerson(remaining[0]?.name || '');
+    setEditingMember(null);
+    if (currentUser && member.id) await deleteDoc(doc(db, 'users', currentUser.uid, 'familyMembers', member.id));
   };
 
   if (!authReady) return null;
@@ -218,8 +289,8 @@ function App() {
       <div className="content">
         {tab === 'Home' && (showTimeline ? <TimelinePage items={items} selectedRecord={timelineRecord} onSelectRecord={setTimelineRecord} onBack={() => { setShowTimeline(false); setTimelineRecord(null); }} /> : <HomeScreen activePerson={activePerson} setActivePerson={setActivePerson} items={items} onAdd={() => setShowAdd(true)} onViewTimeline={() => setShowTimeline(true)} showNotifications={showNotifications} toggleNotifications={() => setShowNotifications(open => !open)} />)}
         {tab === 'Records' && (recordDetail ? <RecordDetailPage record={recordDetail} onBack={() => setRecordDetail(null)} /> : <RecordsScreen items={items} searchTerm={searchTerm} setSearchTerm={setSearchTerm} onAdd={() => setShowAdd(true)} onOpenRecord={setRecordDetail} />)}
-        {tab === 'Family' && (showAddFamily ? <AddFamilyMemberPage onBack={() => setShowAddFamily(false)} onSave={(member) => { setFamilyList(current => [...current, member]); setActivePerson(member.name); setShowAddFamily(false); }} /> : editingMember ? <EditFamilyMemberPage member={editingMember} onBack={() => setEditingMember(null)} onSave={(updatedMember) => { setFamilyList(current => current.map(member => member.name === editingMember.name ? updatedMember : member)); setActivePerson(updatedMember.name); setEditingMember(null); }} onDelete={() => { const remaining = familyList.filter(member => member.name !== editingMember.name); setFamilyList(remaining); setActivePerson(remaining[0]?.name || ''); setEditingMember(null); }} /> : <FamilyScreen activePerson={activePerson} setActivePerson={setActivePerson} familyList={familyList} onAddMember={() => setShowAddFamily(true)} onOpenMember={setEditingMember} />)}
-        {tab === 'Profile' && (editProfile ? <EditProfilePage details={profileDetails} onBack={() => setEditProfile(false)} onSave={(details) => { setProfileDetails(details); setActivePerson(details.fullName); setEditProfile(false); }} /> : settingsPage ? <SettingsPage page={settingsPage} activePerson={activePerson} items={items} onBack={() => setSettingsPage(null)} /> : <ProfileScreen activePerson={activePerson} profileDetails={profileDetails} onLogout={() => signOut(auth)} openSettings={setSettingsPage} openEditProfile={() => setEditProfile(true)} />)}
+        {tab === 'Family' && (showAddFamily ? <AddFamilyMemberPage onBack={() => setShowAddFamily(false)} onSave={addFamilyMember} /> : editingMember ? <EditFamilyMemberPage member={editingMember} onBack={() => setEditingMember(null)} onSave={(updatedMember) => updateFamilyMember(updatedMember, editingMember.name)} onDelete={() => deleteFamilyMember(editingMember)} /> : <FamilyScreen activePerson={activePerson} setActivePerson={setActivePerson} familyList={familyList} onAddMember={() => setShowAddFamily(true)} onOpenMember={setEditingMember} />)}
+        {tab === 'Profile' && (editProfile ? <EditProfilePage details={profileDetails} onBack={() => setEditProfile(false)} onSave={saveProfile} /> : settingsPage ? <SettingsPage page={settingsPage} activePerson={activePerson} items={items} onBack={() => setSettingsPage(null)} /> : <ProfileScreen activePerson={activePerson} profileDetails={profileDetails} onLogout={() => signOut(auth)} openSettings={setSettingsPage} openEditProfile={() => setEditProfile(true)} />)}
       </div>
 
       <nav className="bottom-nav">
