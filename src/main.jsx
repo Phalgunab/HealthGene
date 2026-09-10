@@ -12,6 +12,7 @@ import './logout.css';
 import './google.css';
 import './phone.css';
 import './legal.css';
+import './notifications.css';
 
 const countryCodes = [
   ['India (+91)', '+91'],
@@ -33,6 +34,12 @@ const records = [
   { kind: 'report', title: 'Cardiology consultation', source: 'Mercy Heart Center', date: 'Sep 03', tone: 'mint', icon: ShieldCheck, owner: 'Swetha NAYANI', hospital: 'Mercy Heart Center', doctor: 'Dr. A. Nair', amount: '$260', notes: 'Blood pressure reviewed; continued monitoring advised.' },
   { kind: 'lab', title: 'Routine CBC panel', source: 'CityCare Diagnostics', date: 'Sep 08', tone: 'lavender', icon: Activity, owner: 'Vinay Kumar DURGAM', hospital: 'CityCare Diagnostics', doctor: 'Dr. L. Chowdary', amount: '$95', notes: 'Complete blood count normal; no follow-up needed.' },
   { kind: 'report', title: 'Orthopedic appointment', source: 'Greenfield Orthopedic Clinic', date: 'Sep 01', tone: 'peach', icon: FileText, owner: 'Vinay Kumar DURGAM', hospital: 'Greenfield Orthopedic Clinic', doctor: 'Dr. R. Singh', amount: '$175', notes: 'Mobility assessment and rehab exercise recommendations.' },
+];
+
+const notifications = [
+  { id: 1, title: 'New lab result added', detail: 'Your annual blood work is ready to review.', time: '10 min ago', unread: true },
+  { id: 2, title: 'Appointment reminder', detail: 'Dental cleaning scheduled for October 14.', time: '2 hours ago', unread: true },
+  { id: 3, title: 'Record saved privately', detail: 'Knee MRI scan was added to Swetha NAYANI’s timeline.', time: 'Yesterday', unread: false },
 ];
 
 const recordKindConfig = {
@@ -141,6 +148,7 @@ function App() {
   const [tab, setTab] = useState('Home');
   const [showAdd, setShowAdd] = useState(false);
   const [showNotice, setShowNotice] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
   const [activePerson, setActivePerson] = useState('Phalguna Rao BAMMIDI');
   const [items, setItems] = useState(records);
 
@@ -171,8 +179,10 @@ function App() {
     <section className="mobile-app">
       <header className="topbar">
         <div className="brand"><span className="brand-mark"><HeartPulse size={17}/></span><span>FamilyHealth</span></div>
-        <div className="top-actions"><button className="icon-button" aria-label="Search"><Search size={20}/></button><button className="avatar" onClick={() => setTab('Profile')} aria-label="Profile">MP</button></div>
+        <div className="top-actions"><button className="icon-button" aria-label="Search"><Search size={20}/></button><button className="bell" onClick={() => setShowNotifications(open => !open)} aria-label="Notifications" aria-expanded={showNotifications}><Bell size={19}/><i/><span className="notification-count">{notifications.filter(notification => notification.unread).length}</span></button><button className="avatar" onClick={() => setTab('Profile')} aria-label="Profile">MP</button></div>
       </header>
+
+      {showNotifications && <NotificationPanel />}
 
       <div className="content">
         {tab === 'Home' && <HomeScreen activePerson={activePerson} setActivePerson={setActivePerson} items={items} onAdd={() => setShowAdd(true)} />}
@@ -231,6 +241,13 @@ function AuthScreen({ onAuthenticated }) {
 }
 
 function AuthBrand({ compact = false }) { return <div className={`auth-brand ${compact ? 'compact' : ''}`}><div className="brand"><span className="brand-mark"><HeartPulse size={17}/></span><span>FamilyHealth</span></div>{!compact && <span>Family health</span>}</div> }
+
+function NotificationPanel() {
+  return <section className="notification-panel" aria-label="Notifications">
+    <div className="notification-heading"><div><p className="eyebrow">YOUR UPDATES</p><h2>Notifications</h2></div><span>{notifications.filter(notification => notification.unread).length} unread</span></div>
+    <div className="notification-list">{notifications.map(notification => <article className={`notification-item ${notification.unread ? 'notification-unread' : ''}`} key={notification.id}><span className="notification-icon"><Bell size={15}/></span><div><h3>{notification.title}</h3><p>{notification.detail}</p><small>{notification.time}</small></div>{notification.unread && <i aria-label="Unread"/>}</article>)}</div>
+  </section>;
+}
 
 function LegalDialog({ page, close }) {
   const isTerms = page === 'terms';
