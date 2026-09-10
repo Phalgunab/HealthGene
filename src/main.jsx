@@ -164,6 +164,7 @@ function App() {
     emergencyContact: '',
   });
   const [items, setItems] = useState(records);
+  const activeInitials = activePerson.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase();
 
   const addRecord = (type, details) => {
     const config = recordKindConfig[type] ?? recordKindConfig.Scan;
@@ -192,7 +193,7 @@ function App() {
     <section className="mobile-app">
       <header className="topbar">
         <div className="brand"><span className="brand-mark"><HeartPulse size={17}/></span><span>MyFamilyHealth</span></div>
-        <div className="top-actions"><button className="icon-button" onClick={() => setShowSearch(open => !open)} aria-label="Search" aria-expanded={showSearch}><Search size={20}/></button><button className="avatar" onClick={() => setTab('Profile')} aria-label="Profile">MP</button></div>
+        <div className="top-actions"><button className="icon-button" onClick={() => setShowSearch(open => !open)} aria-label="Search" aria-expanded={showSearch}><Search size={20}/></button><button className="avatar" onClick={() => setTab('Profile')} aria-label={`${activePerson} profile`}>{activeInitials}</button></div>
       </header>
 
       {showSearch && <SearchPanel searchTerm={searchTerm} setSearchTerm={setSearchTerm} chooseExample={(example) => { setSearchTerm(example); setShowSearch(false); setTab('Records'); }} />}
@@ -253,7 +254,7 @@ function AuthScreen({ onAuthenticated }) {
   </section>{legalPage && <LegalDialog page={legalPage} close={() => setLegalPage(null)} />}</main>;
 }
 
-function AuthBrand({ compact = false }) { return <div className={`auth-brand ${compact ? 'compact' : ''}`}><div className="brand"><span className="brand-mark"><HeartPulse size={17}/></span><span>MyFamilyHealth</span></div>{!compact && <span>My family health</span>}</div> }
+function AuthBrand({ compact = false }) { return <div className={`auth-brand ${compact ? 'compact' : ''}`}><div className="brand"><span className="brand-mark"><HeartPulse size={17}/></span><span>MyFamilyHealth</span></div>{!compact && <span>MyFamilyHealth v1.0</span>}</div> }
 
 function NotificationPanel() {
   return <section className="notification-panel" aria-label="Notifications">
