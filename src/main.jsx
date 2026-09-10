@@ -11,6 +11,7 @@ import './styles.css';
 import './logout.css';
 import './google.css';
 import './phone.css';
+import './legal.css';
 
 const countryCodes = [
   ['India (+91)', '+91'],
@@ -196,6 +197,7 @@ function AuthScreen({ onAuthenticated }) {
   const [countryCode, setCountryCode] = useState('+91');
   const [countryOpen, setCountryOpen] = useState(false);
   const [code, setCode] = useState('');
+  const [legalPage, setLegalPage] = useState(null);
   const title = screen === 'signup' ? 'Create your account' : 'Welcome back';
   const submitPhone = (event) => { event.preventDefault(); setScreen('verify'); };
 
@@ -223,12 +225,34 @@ function AuthScreen({ onAuthenticated }) {
     <div className="divider"><span/>or continue with phone<span/></div>
     <form onSubmit={submitPhone}><label className="field-label" htmlFor="phone">PHONE NUMBER</label><div className="phone-field"><div className={`country-select ${countryOpen ? 'country-open' : ''}`}><button className="country-trigger" type="button" aria-label="Country code" aria-expanded={countryOpen} onClick={() => setCountryOpen(open => !open)}><span>{countryCode}</span><ChevronDown size={14}/></button>{countryOpen && <div className="country-menu" role="listbox">{countryCodes.map(([country, codeValue]) => <button className={countryCode === codeValue ? 'country-option selected' : 'country-option'} type="button" role="option" aria-selected={countryCode === codeValue} key={`${country}-${codeValue}`} onClick={() => { setCountryCode(codeValue); setCountryOpen(false); }}><span>{country}</span>{countryCode === codeValue && <Check size={14}/>}</button>)}</div>}</div><input id="phone" type="tel" inputMode="tel" placeholder="(555) 000-0000" value={phone} onChange={e => setPhone(e.target.value)} required/></div>
       <button className="auth-primary" type="submit">{screen === 'signup' ? 'Continue with phone' : 'Send sign-in code'} <ArrowUpRight size={18}/></button></form>
-    <p className="terms-copy">By continuing, you agree to our <button>Terms of Use</button> and <button>Privacy Policy</button>.</p>
+    <p className="terms-copy">By continuing, you agree to our <button type="button" onClick={() => setLegalPage('terms')}>Terms of Use</button> and <button type="button" onClick={() => setLegalPage('privacy')}>Privacy Policy</button>.</p>
     <div className="switch-auth">{screen === 'signup' ? 'Already have an account?' : 'New to FamilyHealth?'} <button onClick={() => setScreen(screen === 'signup' ? 'signin' : 'signup')}>{screen === 'signup' ? 'Sign in' : 'Create an account'}</button></div>
-  </section></main>;
+  </section>{legalPage && <LegalDialog page={legalPage} close={() => setLegalPage(null)} />}</main>;
 }
 
 function AuthBrand({ compact = false }) { return <div className={`auth-brand ${compact ? 'compact' : ''}`}><div className="brand"><span className="brand-mark"><HeartPulse size={17}/></span><span>FamilyHealth</span></div>{!compact && <span>Family health</span>}</div> }
+
+function LegalDialog({ page, close }) {
+  const isTerms = page === 'terms';
+
+  return <div className="legal-backdrop" role="presentation" onClick={close}>
+    <section className="legal-dialog" role="dialog" aria-modal="true" aria-labelledby="legal-title" onClick={event => event.stopPropagation()}>
+      <div className="legal-heading"><div><p className="eyebrow">FAMILYHEALTH</p><h2 id="legal-title">{isTerms ? 'Terms of Use' : 'Privacy Policy'}</h2></div><button className="legal-close" type="button" onClick={close} aria-label="Close policy"><X size={18}/></button></div>
+      {isTerms ? <>
+        <p>By using FamilyHealth, you agree to use the service responsibly and provide information that you have the right to store.</p>
+        <h3>Your account</h3><p>Keep your sign-in details private. You are responsible for activity performed through your account.</p>
+        <h3>Your records</h3><p>FamilyHealth helps organize health information. It does not replace advice, diagnosis, or treatment from a qualified professional.</p>
+        <h3>Changes</h3><p>We may update these terms as the service evolves. Continued use means you accept the current version.</p>
+      </> : <>
+        <p>FamilyHealth is designed to keep your health information private and under your control.</p>
+        <h3>Information you provide</h3><p>Information you enter, upload, or import is used to organize your family health timeline and fill record details.</p>
+        <h3>Local processing</h3><p>Document text extraction and image reading are performed in your browser. Your uploaded files are not sent to a FamilyHealth server by this app.</p>
+        <h3>Your choices</h3><p>You can log out at any time. You control which family profile is selected and what records you add to it.</p>
+      </>}
+      <button className="legal-done" type="button" onClick={close}>Close</button>
+    </section>
+  </div>;
+}
 
 function HomeScreen({ activePerson, setActivePerson, items, onAdd }) {
   const personCycle = ['Phalguna Rao BAMMIDI', 'Swetha NAYANI', 'Vinay Kumar DURGAM'];
