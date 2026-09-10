@@ -344,17 +344,14 @@ function AddFamilyMemberPage({ onBack, onSave }) {
 function EditFamilyMemberPage({ member, onBack, onSave, onDelete }) {
   const [name, setName] = useState(member.name);
   const [relationship, setRelationship] = useState(member.relationship || '');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const initials = name.trim().split(/\s+/).map(part => part[0]).slice(0, 2).join('').toUpperCase() || '?';
 
   const submit = (event) => {
     event.preventDefault();
     onSave({ ...member, name: name.trim(), initial: initials[0], relationship: relationship.trim() || 'Family member' });
   };
-  const confirmDelete = () => {
-    if (window.confirm(`Delete ${member.name}'s family profile?`)) onDelete();
-  };
-
-  return <div className="add-family-page"><button className="settings-back" onClick={onBack}><ArrowLeft size={18}/>Back to family</button><div className="add-family-heading"><span className="large-avatar">{initials}</span><p className="eyebrow">FAMILY PROFILE</p><h1>Update details</h1><p>Edit this member's profile information.</p></div><form className="family-form" onSubmit={submit}><label htmlFor="edit-family-name">FULL NAME</label><input id="edit-family-name" value={name} onChange={event => setName(event.target.value)} required/><label htmlFor="edit-family-relationship">RELATIONSHIP</label><input id="edit-family-relationship" value={relationship} onChange={event => setRelationship(event.target.value)} placeholder="e.g. Daughter, parent, spouse"/><button className="auth-primary" type="submit"><Check size={18}/>Save changes</button></form><button className="delete-member-button" onClick={confirmDelete}><LogOut size={16}/>Delete family member</button></div>;
+  return <><div className="add-family-page"><button className="settings-back" onClick={onBack}><ArrowLeft size={18}/>Back to family</button><div className="add-family-heading"><span className="large-avatar">{initials}</span><p className="eyebrow">FAMILY PROFILE</p><h1>Update details</h1><p>Edit this member's profile information.</p></div><form className="family-form" onSubmit={submit}><label htmlFor="edit-family-name">FULL NAME</label><input id="edit-family-name" value={name} onChange={event => setName(event.target.value)} required/><label htmlFor="edit-family-relationship">RELATIONSHIP</label><input id="edit-family-relationship" value={relationship} onChange={event => setRelationship(event.target.value)} placeholder="e.g. Daughter, parent, spouse"/><button className="auth-primary" type="submit"><Check size={18}/>Save changes</button></form><button className="delete-member-button" onClick={() => setShowDeleteConfirm(true)}><LogOut size={16}/>Delete family member</button></div>{showDeleteConfirm && <div className="confirm-backdrop" role="presentation" onClick={() => setShowDeleteConfirm(false)}><section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-family-title" onClick={event => event.stopPropagation()}><span className="confirm-icon"><LogOut size={20}/></span><h2 id="delete-family-title">Delete family member?</h2><p>This will remove {member.name}'s profile and family access from this device.</p><div className="confirm-actions"><button className="confirm-cancel" onClick={() => setShowDeleteConfirm(false)}>Cancel</button><button className="confirm-delete" onClick={onDelete}>Delete profile</button></div></section></div>}</>;
 }
 
 function ProfileScreen({ activePerson, onLogout, openSettings }) {
