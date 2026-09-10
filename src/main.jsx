@@ -150,6 +150,7 @@ function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [settingsPage, setSettingsPage] = useState(null);
   const [showAddFamily, setShowAddFamily] = useState(false);
+  const [editingMember, setEditingMember] = useState(null);
   const [activePerson, setActivePerson] = useState('Phalguna Rao BAMMIDI');
   const [familyList, setFamilyList] = useState(familyMembers);
   const [items, setItems] = useState(records);
@@ -189,12 +190,12 @@ function App() {
       <div className="content">
         {tab === 'Home' && <HomeScreen activePerson={activePerson} setActivePerson={setActivePerson} items={items} onAdd={() => setShowAdd(true)} showNotifications={showNotifications} toggleNotifications={() => setShowNotifications(open => !open)} />}
         {tab === 'Records' && <RecordsScreen items={items} searchTerm={searchTerm} setSearchTerm={setSearchTerm} onAdd={() => setShowAdd(true)} />}
-        {tab === 'Family' && (showAddFamily ? <AddFamilyMemberPage onBack={() => setShowAddFamily(false)} onSave={(member) => { setFamilyList(current => [...current, member]); setActivePerson(member.name); setShowAddFamily(false); }} /> : <FamilyScreen activePerson={activePerson} setActivePerson={setActivePerson} familyList={familyList} onAddMember={() => setShowAddFamily(true)} />)}
+        {tab === 'Family' && (showAddFamily ? <AddFamilyMemberPage onBack={() => setShowAddFamily(false)} onSave={(member) => { setFamilyList(current => [...current, member]); setActivePerson(member.name); setShowAddFamily(false); }} /> : editingMember ? <EditFamilyMemberPage member={editingMember} onBack={() => setEditingMember(null)} onSave={(updatedMember) => { setFamilyList(current => current.map(member => member.name === editingMember.name ? updatedMember : member)); setActivePerson(updatedMember.name); setEditingMember(null); }} onDelete={() => { const remaining = familyList.filter(member => member.name !== editingMember.name); setFamilyList(remaining); setActivePerson(remaining[0]?.name || ''); setEditingMember(null); }} /> : <FamilyScreen activePerson={activePerson} setActivePerson={setActivePerson} familyList={familyList} onAddMember={() => setShowAddFamily(true)} onOpenMember={setEditingMember} />)}
         {tab === 'Profile' && (settingsPage ? <SettingsPage page={settingsPage} activePerson={activePerson} items={items} onBack={() => setSettingsPage(null)} /> : <ProfileScreen activePerson={activePerson} onLogout={() => setAuthenticated(false)} openSettings={setSettingsPage} />)}
       </div>
 
       <nav className="bottom-nav">
-        {[['Home', Home], ['Records', FileText], ['Family', Users], ['Profile', Settings]].map(([label, Icon]) => <button key={label} onClick={() => { setSettingsPage(null); setShowAddFamily(false); setTab(label); }} className={tab === label ? 'nav-active' : ''}><Icon size={20}/><span>{label}</span></button>)}
+        {[['Home', Home], ['Records', FileText], ['Family', Users], ['Profile', Settings]].map(([label, Icon]) => <button key={label} onClick={() => { setSettingsPage(null); setShowAddFamily(false); setEditingMember(null); setTab(label); }} className={tab === label ? 'nav-active' : ''}><Icon size={20}/><span>{label}</span></button>)}
       </nav>
 
       {showAdd && <AddSheet close={() => setShowAdd(false)} addRecord={addRecord} />}
@@ -321,10 +322,10 @@ function RecordsScreen({ items, searchTerm, setSearchTerm, onAdd }) {
   return <><div className="page-title"><p className="eyebrow">YOUR LIBRARY</p><h1>Health records</h1><span>Everything, in one secure place.</span></div><div className="search-box"><Search size={18}/><input aria-label="Search records" value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder="Search records" /></div>{searchTerm && <p className="search-result-label">Showing results for “{searchTerm}”</p>}<div className="filter-row"><button className="selected-filter">All records</button><button>Reports</button><button>Labs</button><button>Images</button></div><div className="record-list">{filteredItems.length ? filteredItems.map((record, index) => <RecordRow record={record} key={index}/>) : <div className="empty-search">No matching records yet.</div>}</div><button className="floating-add" onClick={onAdd}><Plus size={21}/>Add record</button></>;
 }
 
-function FamilyScreen({ activePerson, setActivePerson, familyList, onAddMember }) {
+function FamilyScreen({ activePerson, setActivePerson, familyList, onAddMember, onOpenMember }) {
   const people = familyList.map(({ name, initial, tone, relationship }) => [initial, name, tone, relationship]);
 
-  return <><div className="page-title family-title"><p className="eyebrow">SHARED CARE</p><h1>Family health</h1><span>Care for the people you love.</span></div><div className="family-tip"><Sparkles size={18}/><span>Keep everyone's care history organized in one place.</span></div><div className="people-list">{people.map(([initial,name,tone,relationship])=><button onClick={()=>setActivePerson(name)} className={`person-row ${activePerson===name?'person-selected':''}`} key={name}><span className={`family-avatar ${tone}`}>{initial}</span><span><b>{name}</b><small>{name === 'Phalguna Rao BAMMIDI' ? 'Your personal health space' : relationship || `${name}'s health records`}</small></span>{activePerson===name?<span className="active-dot">✓</span>:<ChevronRight size={18}/>}</button>)}</div><button className="invite-button" onClick={onAddMember}><Plus size={19}/>Add family member</button><p className="family-footnote"><ShieldCheck size={14}/>You control who can view and manage each profile.</p></> }
+  return <><div className="page-title family-title"><p className="eyebrow">SHARED CARE</p><h1>Family health</h1><span>Care for the people you love.</span></div><div className="family-tip"><Sparkles size={18}/><span>Keep everyone's care history organized in one place.</span></div><div className="people-list">{people.map(([initial,name,tone,relationship])=><button onClick={()=>{ setActivePerson(name); onOpenMember(familyList.find(member => member.name === name)); }} className={`person-row ${activePerson===name?'person-selected':''}`} key={name}><span className={`family-avatar ${tone}`}>{initial}</span><span><b>{name}</b><small>{name === 'Phalguna Rao BAMMIDI' ? 'Your personal health space' : relationship || `${name}'s health records`}</small></span><ChevronRight size={18}/></button>)}</div><button className="invite-button" onClick={onAddMember}><Plus size={19}/>Add family member</button><p className="family-footnote"><ShieldCheck size={14}/>You control who can view and manage each profile.</p></> }
 
 function AddFamilyMemberPage({ onBack, onSave }) {
   const [name, setName] = useState('');
@@ -338,6 +339,22 @@ function AddFamilyMemberPage({ onBack, onSave }) {
   };
 
   return <div className="add-family-page"><button className="settings-back" onClick={onBack}><ArrowLeft size={18}/>Back to family</button><div className="add-family-heading"><span className="large-avatar">{initials}</span><p className="eyebrow">NEW PROFILE</p><h1>Add family member</h1><p>Create a separate health space for someone you care for.</p></div><form className="family-form" onSubmit={submit}><label htmlFor="family-name">FULL NAME</label><input id="family-name" value={name} onChange={event => setName(event.target.value)} placeholder="e.g. Anika Rao" required/><label htmlFor="family-relationship">RELATIONSHIP</label><input id="family-relationship" value={relationship} onChange={event => setRelationship(event.target.value)} placeholder="e.g. Daughter, parent, spouse"/><button className="auth-primary" type="submit"><Check size={18}/>Save family member</button></form></div>;
+}
+
+function EditFamilyMemberPage({ member, onBack, onSave, onDelete }) {
+  const [name, setName] = useState(member.name);
+  const [relationship, setRelationship] = useState(member.relationship || '');
+  const initials = name.trim().split(/\s+/).map(part => part[0]).slice(0, 2).join('').toUpperCase() || '?';
+
+  const submit = (event) => {
+    event.preventDefault();
+    onSave({ ...member, name: name.trim(), initial: initials[0], relationship: relationship.trim() || 'Family member' });
+  };
+  const confirmDelete = () => {
+    if (window.confirm(`Delete ${member.name}'s family profile?`)) onDelete();
+  };
+
+  return <div className="add-family-page"><button className="settings-back" onClick={onBack}><ArrowLeft size={18}/>Back to family</button><div className="add-family-heading"><span className="large-avatar">{initials}</span><p className="eyebrow">FAMILY PROFILE</p><h1>Update details</h1><p>Edit this member's profile information.</p></div><form className="family-form" onSubmit={submit}><label htmlFor="edit-family-name">FULL NAME</label><input id="edit-family-name" value={name} onChange={event => setName(event.target.value)} required/><label htmlFor="edit-family-relationship">RELATIONSHIP</label><input id="edit-family-relationship" value={relationship} onChange={event => setRelationship(event.target.value)} placeholder="e.g. Daughter, parent, spouse"/><button className="auth-primary" type="submit"><Check size={18}/>Save changes</button></form><button className="delete-member-button" onClick={confirmDelete}><LogOut size={16}/>Delete family member</button></div>;
 }
 
 function ProfileScreen({ activePerson, onLogout, openSettings }) {
