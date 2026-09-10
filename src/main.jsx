@@ -191,7 +191,7 @@ function App() {
   return <main className="app-shell">
     <section className="mobile-app">
       <header className="topbar">
-        <div className="brand"><span className="brand-mark"><HeartPulse size={17}/></span><span>FamilyHealth</span></div>
+        <div className="brand"><span className="brand-mark"><HeartPulse size={17}/></span><span>MyFamilyHealth</span></div>
         <div className="top-actions"><button className="icon-button" onClick={() => setShowSearch(open => !open)} aria-label="Search" aria-expanded={showSearch}><Search size={20}/></button><button className="avatar" onClick={() => setTab('Profile')} aria-label="Profile">MP</button></div>
       </header>
 
@@ -243,17 +243,17 @@ function AuthScreen({ onAuthenticated }) {
 
   return <main className="auth-shell"><section className="auth-card form-card">
     <button className="back-button" onClick={() => setScreen('welcome')}><ArrowLeft size={20}/></button><AuthBrand compact />
-    <div className="form-heading"><p className="eyebrow">{screen === 'signup' ? 'WELCOME TO FAMILYHEALTH' : 'YOUR HEALTH SPACE'}</p><h1>{title}</h1><p>{screen === 'signup' ? 'Start building your secure health history.' : 'Sign in to see your health story.'}</p></div>
+    <div className="form-heading"><p className="eyebrow">{screen === 'signup' ? 'WELCOME TO MYFAMILYHEALTH' : 'YOUR HEALTH SPACE'}</p><h1>{title}</h1><p>{screen === 'signup' ? 'Start building your secure health history.' : 'Sign in to see your health story.'}</p></div>
     <button className="google-button" onClick={onAuthenticated}><span className="google-mark" aria-hidden="true"/><span>Continue with Google</span></button>
     <div className="divider"><span/>or continue with phone<span/></div>
     <form onSubmit={submitPhone}><label className="field-label" htmlFor="phone">PHONE NUMBER</label><div className="phone-field"><div className={`country-select ${countryOpen ? 'country-open' : ''}`}><button className="country-trigger" type="button" aria-label="Country code" aria-expanded={countryOpen} onClick={() => setCountryOpen(open => !open)}><span>{countryCode}</span><ChevronDown size={14}/></button>{countryOpen && <div className="country-menu" role="listbox">{countryCodes.map(([country, codeValue]) => <button className={countryCode === codeValue ? 'country-option selected' : 'country-option'} type="button" role="option" aria-selected={countryCode === codeValue} key={`${country}-${codeValue}`} onClick={() => { setCountryCode(codeValue); setCountryOpen(false); }}><span>{country}</span>{countryCode === codeValue && <Check size={14}/>}</button>)}</div>}</div><input id="phone" type="tel" inputMode="tel" placeholder="(555) 000-0000" value={phone} onChange={e => setPhone(e.target.value)} required/></div>
       <button className="auth-primary" type="submit">{screen === 'signup' ? 'Continue with phone' : 'Send sign-in code'} <ArrowUpRight size={18}/></button></form>
     <p className="terms-copy">By continuing, you agree to our <button type="button" onClick={() => setLegalPage('terms')}>Terms of Use</button> and <button type="button" onClick={() => setLegalPage('privacy')}>Privacy Policy</button>.</p>
-    <div className="switch-auth">{screen === 'signup' ? 'Already have an account?' : 'New to FamilyHealth?'} <button onClick={() => setScreen(screen === 'signup' ? 'signin' : 'signup')}>{screen === 'signup' ? 'Sign in' : 'Create an account'}</button></div>
+    <div className="switch-auth">{screen === 'signup' ? 'Already have an account?' : 'New to MyFamilyHealth?'} <button onClick={() => setScreen(screen === 'signup' ? 'signin' : 'signup')}>{screen === 'signup' ? 'Sign in' : 'Create an account'}</button></div>
   </section>{legalPage && <LegalDialog page={legalPage} close={() => setLegalPage(null)} />}</main>;
 }
 
-function AuthBrand({ compact = false }) { return <div className={`auth-brand ${compact ? 'compact' : ''}`}><div className="brand"><span className="brand-mark"><HeartPulse size={17}/></span><span>FamilyHealth</span></div>{!compact && <span>Family health</span>}</div> }
+function AuthBrand({ compact = false }) { return <div className={`auth-brand ${compact ? 'compact' : ''}`}><div className="brand"><span className="brand-mark"><HeartPulse size={17}/></span><span>MyFamilyHealth</span></div>{!compact && <span>My family health</span>}</div> }
 
 function NotificationPanel() {
   return <section className="notification-panel" aria-label="Notifications">
@@ -275,16 +275,16 @@ function LegalDialog({ page, close }) {
 
   return <div className="legal-backdrop" role="presentation" onClick={close}>
     <section className="legal-dialog" role="dialog" aria-modal="true" aria-labelledby="legal-title" onClick={event => event.stopPropagation()}>
-      <div className="legal-heading"><div><p className="eyebrow">FAMILYHEALTH</p><h2 id="legal-title">{isTerms ? 'Terms of Use' : 'Privacy Policy'}</h2></div><button className="legal-close" type="button" onClick={close} aria-label="Close policy"><X size={18}/></button></div>
+      <div className="legal-heading"><div><p className="eyebrow">MYFAMILYHEALTH</p><h2 id="legal-title">{isTerms ? 'Terms of Use' : 'Privacy Policy'}</h2></div><button className="legal-close" type="button" onClick={close} aria-label="Close policy"><X size={18}/></button></div>
       {isTerms ? <>
-        <p>By using FamilyHealth, you agree to use the service responsibly and provide information that you have the right to store.</p>
+        <p>By using MyFamilyHealth, you agree to use the service responsibly and provide information that you have the right to store.</p>
         <h3>Your account</h3><p>Keep your sign-in details private. You are responsible for activity performed through your account.</p>
-        <h3>Your records</h3><p>FamilyHealth helps organize health information. It does not replace advice, diagnosis, or treatment from a qualified professional.</p>
+        <h3>Your records</h3><p>MyFamilyHealth helps organize health information. It does not replace advice, diagnosis, or treatment from a qualified professional.</p>
         <h3>Changes</h3><p>We may update these terms as the service evolves. Continued use means you accept the current version.</p>
       </> : <>
-        <p>FamilyHealth is designed to keep your health information private and under your control.</p>
+        <p>MyFamilyHealth is designed to keep your health information private and under your control.</p>
         <h3>Information you provide</h3><p>Information you enter, upload, or import is used to organize your family health timeline and fill record details.</p>
-        <h3>Local processing</h3><p>Document text extraction and image reading are performed in your browser. Your uploaded files are not sent to a FamilyHealth server by this app.</p>
+        <h3>Local processing</h3><p>Document text extraction and image reading are performed in your browser. Your uploaded files are not sent to a MyFamilyHealth server by this app.</p>
         <h3>Your choices</h3><p>You can log out at any time. You control which family profile is selected and what records you add to it.</p>
       </>}
       <button className="legal-done" type="button" onClick={close}>Close</button>
@@ -368,7 +368,7 @@ function ProfileScreen({ activePerson, profileDetails, onLogout, openSettings, o
   const displayName = profileDetails.fullName || activePerson;
   const initials = displayName.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase();
 
-  return <><div className="profile-hero"><span className="large-avatar">{initials}</span><h1>{displayName}</h1><span>Personal health space</span><button onClick={openEditProfile}>Edit profile</button></div><div className="settings-list">{[[ShieldCheck,'Privacy & security','privacy'],[Bell,'Notifications','notifications'],[Users,'Sharing & family access','sharing'],[FileText,'Export my records','export']].map(([Icon,label,page])=><button key={label} onClick={() => openSettings(page)}><span><Icon size={20}/>{label}</span><ChevronRight size={18}/></button>)}</div><button className="logout-button" onClick={onLogout}><LogOut size={16}/>Log out</button><p className="profile-version">FamilyHealth v1.0 · Your data stays yours</p></>;
+  return <><div className="profile-hero"><span className="large-avatar">{initials}</span><h1>{displayName}</h1><span>Personal health space</span><button onClick={openEditProfile}>Edit profile</button></div><div className="settings-list">{[[ShieldCheck,'Privacy & security','privacy'],[Bell,'Notifications','notifications'],[Users,'Sharing & family access','sharing'],[FileText,'Export my records','export']].map(([Icon,label,page])=><button key={label} onClick={() => openSettings(page)}><span><Icon size={20}/>{label}</span><ChevronRight size={18}/></button>)}</div><button className="logout-button" onClick={onLogout}><LogOut size={16}/>Log out</button><p className="profile-version">MyFamilyHealth v1.0 · Your data stays yours</p></>;
 }
 
 function EditProfilePage({ details, onBack, onSave }) {
@@ -385,7 +385,7 @@ function SettingsPage({ page, activePerson, items, onBack }) {
 
   const pageDetails = {
     privacy: { label: 'PRIVACY & SECURITY', title: 'Privacy & security', description: 'Your health information stays under your control.', icon: ShieldCheck },
-    notifications: { label: 'YOUR PREFERENCES', title: 'Notifications', description: 'Choose which updates FamilyHealth can send you.', icon: Bell },
+    notifications: { label: 'YOUR PREFERENCES', title: 'Notifications', description: 'Choose which updates MyFamilyHealth can send you.', icon: Bell },
     sharing: { label: 'FAMILY ACCESS', title: 'Sharing & family access', description: 'Review how your family profiles are organized.', icon: Users },
     export: { label: 'YOUR DATA', title: 'Export my records', description: 'Download a copy of your health timeline.', icon: FileText },
   }[page];
@@ -398,7 +398,7 @@ function SettingsPage({ page, activePerson, items, onBack }) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'familyhealth-records.csv';
+    link.download = 'myfamilyhealth-records.csv';
     link.click();
     URL.revokeObjectURL(url);
   };
