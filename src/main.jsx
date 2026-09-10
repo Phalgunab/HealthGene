@@ -224,10 +224,11 @@ function HomeScreen({ activePerson, setActivePerson, items, onAdd }) {
   const personCycle = ['Phalguna Rao BAMMIDI', 'Swetha NAYANI', 'Vinay Kumar DURGAM'];
   const currentIndex = personCycle.indexOf(activePerson);
   const nextPerson = personCycle[(currentIndex + 1) % personCycle.length];
+  const firstName = activePerson.split(' ')[0];
   const initials = activePerson.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase();
 
   return <>
-    <div className="hello-row"><div><p className="eyebrow">TUESDAY, SEPTEMBER 9</p><h1>Good morning, Maya</h1></div><button className="bell"><Bell size={19}/><i/></button></div>
+    <div className="hello-row"><div><p className="eyebrow">TUESDAY, SEPTEMBER 9</p><h1>Good morning, {firstName}</h1></div><button className="bell"><Bell size={19}/><i/></button></div>
     <button className="person-picker" onClick={() => setActivePerson(nextPerson)}><span className="person-mini">{initials}</span><span><b>{activePerson}</b><small>Personal health space</small></span><ChevronDown size={18}/></button>
 
     <section className="status-card">
