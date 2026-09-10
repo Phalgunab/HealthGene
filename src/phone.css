@@ -1,14 +1,25 @@
 .country-select {
+  position: relative;
   display: flex;
   align-items: center;
   height: 100%;
   border-right: 1px solid #e4eae5;
 }
 
+.phone-field:focus-within {
+  border-color: #75a99b;
+  box-shadow: 0 0 0 3px rgba(91, 151, 133, 0.14);
+}
+
+.country-select:focus-within {
+  background: #f3faf7;
+}
+
 .country-select select {
+  appearance: none;
   max-width: 144px;
   height: 100%;
-  padding: 0 28px 0 12px;
+  padding: 0 30px 0 12px;
   border: 0;
   outline: 0;
   color: #395d57;
@@ -16,6 +27,30 @@
   font: inherit;
   font-size: 12px;
   cursor: pointer;
+}
+
+.country-select::after {
+  content: '';
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid #5e8178;
+  border-bottom: 1.5px solid #5e8178;
+  transform: translateY(-65%) rotate(45deg);
+  pointer-events: none;
+}
+
+.country-select:focus-within::after {
+  border-color: #287368;
+  transform: translateY(-35%) rotate(225deg);
+}
+
+.country-select option {
+  color: #294d46;
+  background: #fff;
+  font-size: 13px;
 }
 
 .phone-field input {
