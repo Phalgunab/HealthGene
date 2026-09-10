@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import * as pdfjsLib from 'pdfjs-dist';
 import Tesseract from 'tesseract.js';
@@ -8,6 +8,8 @@ import {
   Search, Settings, ShieldCheck, Sparkles, Upload, Users, X, ArrowLeft, Check, Smartphone, LogOut
 } from 'lucide-react';
 import './styles.css';
+import { auth, googleProvider } from './firebase';
+import { onAuthStateChanged, RecaptchaVerifier, signInWithPhoneNumber, signInWithPopup, signOut } from 'firebase/auth';
 
 const countryCodes = [
   ['India (+91)', '+91'],
@@ -147,6 +149,7 @@ const handleUploadedDocument = async (file, setForm) => {
 
 function App() {
   const [authenticated, setAuthenticated] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
   const [tab, setTab] = useState('Home');
   const [showAdd, setShowAdd] = useState(false);
   const [showNotice, setShowNotice] = useState(false);
@@ -174,6 +177,11 @@ function App() {
   const [items, setItems] = useState(records);
   const activeInitials = activePerson.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase();
 
+  useEffect(() => onAuthStateChanged(auth, (user) => {
+    setAuthenticated(Boolean(user));
+    setAuthReady(true);
+  }), []);
+
   const addRecord = (type, details) => {
     const config = recordKindConfig[type] ?? recordKindConfig.Scan;
     const record = {
@@ -195,7 +203,8 @@ function App() {
     setTimeout(() => setShowNotice(false), 2800);
   };
 
-  if (!authenticated) return <AuthScreen onAuthenticated={() => setAuthenticated(true)} />;
+  if (!authReady) return null;
+  if (!authenticated) return <AuthScreen />;
 
   return <main className="app-shell">
     <section className="mobile-app">
@@ -210,7 +219,7 @@ function App() {
         {tab === 'Home' && (showTimeline ? <TimelinePage items={items} selectedRecord={timelineRecord} onSelectRecord={setTimelineRecord} onBack={() => { setShowTimeline(false); setTimelineRecord(null); }} /> : <HomeScreen activePerson={activePerson} setActivePerson={setActivePerson} items={items} onAdd={() => setShowAdd(true)} onViewTimeline={() => setShowTimeline(true)} showNotifications={showNotifications} toggleNotifications={() => setShowNotifications(open => !open)} />)}
         {tab === 'Records' && (recordDetail ? <RecordDetailPage record={recordDetail} onBack={() => setRecordDetail(null)} /> : <RecordsScreen items={items} searchTerm={searchTerm} setSearchTerm={setSearchTerm} onAdd={() => setShowAdd(true)} onOpenRecord={setRecordDetail} />)}
         {tab === 'Family' && (showAddFamily ? <AddFamilyMemberPage onBack={() => setShowAddFamily(false)} onSave={(member) => { setFamilyList(current => [...current, member]); setActivePerson(member.name); setShowAddFamily(false); }} /> : editingMember ? <EditFamilyMemberPage member={editingMember} onBack={() => setEditingMember(null)} onSave={(updatedMember) => { setFamilyList(current => current.map(member => member.name === editingMember.name ? updatedMember : member)); setActivePerson(updatedMember.name); setEditingMember(null); }} onDelete={() => { const remaining = familyList.filter(member => member.name !== editingMember.name); setFamilyList(remaining); setActivePerson(remaining[0]?.name || ''); setEditingMember(null); }} /> : <FamilyScreen activePerson={activePerson} setActivePerson={setActivePerson} familyList={familyList} onAddMember={() => setShowAddFamily(true)} onOpenMember={setEditingMember} />)}
-        {tab === 'Profile' && (editProfile ? <EditProfilePage details={profileDetails} onBack={() => setEditProfile(false)} onSave={(details) => { setProfileDetails(details); setActivePerson(details.fullName); setEditProfile(false); }} /> : settingsPage ? <SettingsPage page={settingsPage} activePerson={activePerson} items={items} onBack={() => setSettingsPage(null)} /> : <ProfileScreen activePerson={activePerson} profileDetails={profileDetails} onLogout={() => setAuthenticated(false)} openSettings={setSettingsPage} openEditProfile={() => setEditProfile(true)} />)}
+        {tab === 'Profile' && (editProfile ? <EditProfilePage details={profileDetails} onBack={() => setEditProfile(false)} onSave={(details) => { setProfileDetails(details); setActivePerson(details.fullName); setEditProfile(false); }} /> : settingsPage ? <SettingsPage page={settingsPage} activePerson={activePerson} items={items} onBack={() => setSettingsPage(null)} /> : <ProfileScreen activePerson={activePerson} profileDetails={profileDetails} onLogout={() => signOut(auth)} openSettings={setSettingsPage} openEditProfile={() => setEditProfile(true)} />)}
       </div>
 
       <nav className="bottom-nav">
@@ -223,15 +232,53 @@ function App() {
   </main>;
 }
 
-function AuthScreen({ onAuthenticated }) {
+function AuthScreen() {
   const [screen, setScreen] = useState('welcome');
   const [phone, setPhone] = useState('');
   const [countryCode, setCountryCode] = useState('+91');
   const [countryOpen, setCountryOpen] = useState(false);
   const [code, setCode] = useState('');
   const [legalPage, setLegalPage] = useState(null);
+  const [authError, setAuthError] = useState('');
+  const [confirmationResult, setConfirmationResult] = useState(null);
+  const recaptchaRef = useRef(null);
   const title = screen === 'signup' ? 'Create your account' : 'Welcome back';
-  const submitPhone = (event) => { event.preventDefault(); setScreen('verify'); };
+  const showAuthError = (error) => {
+    setAuthError(error?.code === 'auth/popup-closed-by-user' ? 'Google sign-in was cancelled.' : error?.message || 'Authentication failed. Please try again.');
+  };
+  const loginWithGoogle = async () => {
+    setAuthError('');
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (error) {
+      showAuthError(error);
+    }
+  };
+  const submitPhone = async (event) => {
+    event.preventDefault();
+    setAuthError('');
+    try {
+      if (!recaptchaRef.current) {
+        recaptchaRef.current = new RecaptchaVerifier(auth, 'recaptcha-container', { size: 'invisible' });
+      }
+      const result = await signInWithPhoneNumber(auth, `${countryCode}${phone.replace(/\D/g, '')}`, recaptchaRef.current);
+      setConfirmationResult(result);
+      setScreen('verify');
+    } catch (error) {
+      showAuthError(error);
+      recaptchaRef.current?.clear();
+      recaptchaRef.current = null;
+    }
+  };
+  const verifyCode = async (event) => {
+    event.preventDefault();
+    setAuthError('');
+    try {
+      await confirmationResult.confirm(code);
+    } catch (error) {
+      showAuthError(error);
+    }
+  };
 
   if (screen === 'welcome') return <main className="auth-shell"><section className="auth-card welcome-card">
     <AuthBrand />
@@ -245,21 +292,23 @@ function AuthScreen({ onAuthenticated }) {
   if (screen === 'verify') return <main className="auth-shell"><section className="auth-card form-card verify-card">
     <button className="back-button" onClick={() => setScreen('signup')}><ArrowLeft size={20}/></button><AuthBrand compact />
     <div className="form-heading"><div className="verification-icon"><Smartphone size={25}/></div><h1>Check your messages</h1><p>We sent a 6-digit code to <b>{phone ? `${countryCode} ${phone}` : `${countryCode} (555) 000-0000`}</b>.</p></div>
-    <form onSubmit={(e) => { e.preventDefault(); onAuthenticated(); }}><label className="field-label">VERIFICATION CODE</label><input aria-label="Verification code" className="code-input" inputMode="numeric" maxLength="6" placeholder="• • • • • •" value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ''))} autoFocus/>
+    <form onSubmit={verifyCode}><label className="field-label">VERIFICATION CODE</label><input aria-label="Verification code" className="code-input" inputMode="numeric" maxLength="6" placeholder="• • • • • •" value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ''))} autoFocus/>
       <button className="auth-primary" type="submit">Verify and continue <Check size={18}/></button></form>
+    {authError && <p className="auth-error">{authError}</p>}
     <button className="resend-button" onClick={() => setCode('')}>Didn't receive a code? <b>Resend</b></button><button className="change-number" onClick={() => setScreen('signup')}>Use a different number</button>
   </section></main>;
 
   return <main className="auth-shell"><section className="auth-card form-card">
     <button className="back-button" onClick={() => setScreen('welcome')}><ArrowLeft size={20}/></button><AuthBrand compact />
     <div className="form-heading"><p className="eyebrow">{screen === 'signup' ? 'WELCOME TO MYFAMILYHEALTH' : 'YOUR HEALTH SPACE'}</p><h1>{title}</h1><p>{screen === 'signup' ? 'Start building your secure health history.' : 'Sign in to see your health story.'}</p></div>
-    <button className="google-button" onClick={onAuthenticated}><span className="google-mark" aria-hidden="true"/><span>Continue with Google</span></button>
+    <button className="google-button" onClick={loginWithGoogle}><span className="google-mark" aria-hidden="true"/><span>Continue with Google</span></button>
     <div className="divider"><span/>or continue with phone<span/></div>
     <form onSubmit={submitPhone}><label className="field-label" htmlFor="phone">PHONE NUMBER</label><div className="phone-field"><div className={`country-select ${countryOpen ? 'country-open' : ''}`}><button className="country-trigger" type="button" aria-label="Country code" aria-expanded={countryOpen} onClick={() => setCountryOpen(open => !open)}><span>{countryCode}</span><ChevronDown size={14}/></button>{countryOpen && <div className="country-menu" role="listbox">{countryCodes.map(([country, codeValue]) => <button className={countryCode === codeValue ? 'country-option selected' : 'country-option'} type="button" role="option" aria-selected={countryCode === codeValue} key={`${country}-${codeValue}`} onClick={() => { setCountryCode(codeValue); setCountryOpen(false); }}><span>{country}</span>{countryCode === codeValue && <Check size={14}/>}</button>)}</div>}</div><input id="phone" type="tel" inputMode="tel" placeholder="(555) 000-0000" value={phone} onChange={e => setPhone(e.target.value)} required/></div>
       <button className="auth-primary" type="submit">{screen === 'signup' ? 'Continue with phone' : 'Send sign-in code'} <ArrowUpRight size={18}/></button></form>
     <p className="terms-copy">By continuing, you agree to our <button type="button" onClick={() => setLegalPage('terms')}>Terms of Use</button> and <button type="button" onClick={() => setLegalPage('privacy')}>Privacy Policy</button>.</p>
     <div className="switch-auth">{screen === 'signup' ? 'Already have an account?' : 'New to MyFamilyHealth?'} <button onClick={() => setScreen(screen === 'signup' ? 'signin' : 'signup')}>{screen === 'signup' ? 'Sign in' : 'Create an account'}</button></div>
-  </section>{legalPage && <LegalDialog page={legalPage} close={() => setLegalPage(null)} />}</main>;
+    {authError && <p className="auth-error">{authError}</p>}
+  </section>{legalPage && <LegalDialog page={legalPage} close={() => setLegalPage(null)} />}<div id="recaptcha-container" /></main>;
 }
 
 function AuthBrand({ compact = false }) { return <div className={`auth-brand ${compact ? 'compact' : ''}`}><div className="brand"><span className="brand-mark"><HeartPulse size={17}/></span><span>MyFamilyHealth</span></div>{!compact && <span>MyFamilyHealth v1.0</span>}</div> }
