@@ -159,6 +159,7 @@ function App() {
   const [editingMember, setEditingMember] = useState(null);
   const [showTimeline, setShowTimeline] = useState(false);
   const [timelineRecord, setTimelineRecord] = useState(null);
+  const [recordDetail, setRecordDetail] = useState(null);
   const [activePerson, setActivePerson] = useState('Phalguna Rao BAMMIDI');
   const [familyList, setFamilyList] = useState(familyMembers);
   const [profileDetails, setProfileDetails] = useState({
@@ -207,13 +208,13 @@ function App() {
 
       <div className="content">
         {tab === 'Home' && (showTimeline ? <TimelinePage items={items} selectedRecord={timelineRecord} onSelectRecord={setTimelineRecord} onBack={() => { setShowTimeline(false); setTimelineRecord(null); }} /> : <HomeScreen activePerson={activePerson} setActivePerson={setActivePerson} items={items} onAdd={() => setShowAdd(true)} onViewTimeline={() => setShowTimeline(true)} showNotifications={showNotifications} toggleNotifications={() => setShowNotifications(open => !open)} />)}
-        {tab === 'Records' && <RecordsScreen items={items} searchTerm={searchTerm} setSearchTerm={setSearchTerm} onAdd={() => setShowAdd(true)} />}
+        {tab === 'Records' && (recordDetail ? <RecordDetailPage record={recordDetail} onBack={() => setRecordDetail(null)} /> : <RecordsScreen items={items} searchTerm={searchTerm} setSearchTerm={setSearchTerm} onAdd={() => setShowAdd(true)} onOpenRecord={setRecordDetail} />)}
         {tab === 'Family' && (showAddFamily ? <AddFamilyMemberPage onBack={() => setShowAddFamily(false)} onSave={(member) => { setFamilyList(current => [...current, member]); setActivePerson(member.name); setShowAddFamily(false); }} /> : editingMember ? <EditFamilyMemberPage member={editingMember} onBack={() => setEditingMember(null)} onSave={(updatedMember) => { setFamilyList(current => current.map(member => member.name === editingMember.name ? updatedMember : member)); setActivePerson(updatedMember.name); setEditingMember(null); }} onDelete={() => { const remaining = familyList.filter(member => member.name !== editingMember.name); setFamilyList(remaining); setActivePerson(remaining[0]?.name || ''); setEditingMember(null); }} /> : <FamilyScreen activePerson={activePerson} setActivePerson={setActivePerson} familyList={familyList} onAddMember={() => setShowAddFamily(true)} onOpenMember={setEditingMember} />)}
         {tab === 'Profile' && (editProfile ? <EditProfilePage details={profileDetails} onBack={() => setEditProfile(false)} onSave={(details) => { setProfileDetails(details); setActivePerson(details.fullName); setEditProfile(false); }} /> : settingsPage ? <SettingsPage page={settingsPage} activePerson={activePerson} items={items} onBack={() => setSettingsPage(null)} /> : <ProfileScreen activePerson={activePerson} profileDetails={profileDetails} onLogout={() => setAuthenticated(false)} openSettings={setSettingsPage} openEditProfile={() => setEditProfile(true)} />)}
       </div>
 
       <nav className="bottom-nav">
-        {[['Home', Home], ['Records', FileText], ['Family', Users], ['Profile', Settings]].map(([label, Icon]) => <button key={label} onClick={() => { setSettingsPage(null); setEditProfile(false); setShowAddFamily(false); setEditingMember(null); setShowTimeline(false); setTimelineRecord(null); setTab(label); }} className={tab === label ? 'nav-active' : ''}><Icon size={20}/><span>{label}</span></button>)}
+        {[['Home', Home], ['Records', FileText], ['Family', Users], ['Profile', Settings]].map(([label, Icon]) => <button key={label} onClick={() => { setSettingsPage(null); setEditProfile(false); setShowAddFamily(false); setEditingMember(null); setShowTimeline(false); setTimelineRecord(null); setRecordDetail(null); setTab(label); }} className={tab === label ? 'nav-active' : ''}><Icon size={20}/><span>{label}</span></button>)}
       </nav>
 
       {showAdd && <AddSheet close={() => setShowAdd(false)} addRecord={addRecord} />}
@@ -354,14 +355,20 @@ function RecordDetailPage({ record, onBack }) {
 
 function DetailField({ label, value }) { return <div className="detail-field"><p>{label}</p><b>{value}</b></div>; }
 
-function RecordRow({ record }) { const Icon = record.icon; return <button className="record-row"><div className={`record-icon ${record.tone}`}><Icon size={19}/></div><div className="record-copy"><b>{record.title}</b><span>{record.source}</span></div><div className="record-date">{record.date}<ChevronRight size={16}/></div></button> }
+function RecordRow({ record, onOpen }) { const Icon = record.icon; return <button className="record-row" onClick={onOpen}><div className={`record-icon ${record.tone}`}><Icon size={19}/></div><div className="record-copy"><b>{record.title}</b><span>{record.source}</span></div><div className="record-date">{record.date}<ChevronRight size={16}/></div></button> }
 
-function RecordsScreen({ items, searchTerm, setSearchTerm, onAdd }) {
-  const allItems = items.concat([{title:'COVID-19 vaccination', source:'Central Medical Centre', date:'Jul 28', tone:'mint', icon: ShieldCheck}]);
+function RecordsScreen({ items, searchTerm, setSearchTerm, onAdd, onOpenRecord }) {
+  const [recordFilter, setRecordFilter] = useState('all');
+  const allItems = items.concat([{kind:'report', title:'COVID-19 vaccination', source:'Central Medical Centre', date:'Jul 28', tone:'mint', icon: ShieldCheck, hospital:'Central Medical Centre', doctor:'Not provided', amount:'Not provided', notes:'Vaccination record.'}]);
   const normalizedSearch = searchTerm.toLowerCase().trim();
-  const filteredItems = normalizedSearch ? allItems.filter(record => [record.title, record.source, record.owner, record.hospital, record.doctor, record.notes].filter(Boolean).join(' ').toLowerCase().includes(normalizedSearch)) : allItems;
+  const filteredItems = allItems.filter(record => {
+    const matchesType = recordFilter === 'all' || record.kind === recordFilter;
+    const searchableText = [record.title, record.source, record.owner, record.hospital, record.doctor, record.notes].filter(Boolean).join(' ').toLowerCase();
+    return matchesType && (!normalizedSearch || searchableText.includes(normalizedSearch));
+  });
+  const filters = [['all', 'All records'], ['report', 'Reports'], ['lab', 'Labs'], ['image', 'Images']];
 
-  return <><div className="page-title"><p className="eyebrow">YOUR LIBRARY</p><h1>Health records</h1><span>Everything, in one secure place.</span></div><div className="search-box"><Search size={18}/><input aria-label="Search records" value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder="Search records" /></div>{searchTerm && <p className="search-result-label">Showing results for “{searchTerm}”</p>}<div className="filter-row"><button className="selected-filter">All records</button><button>Reports</button><button>Labs</button><button>Images</button></div><div className="record-list">{filteredItems.length ? filteredItems.map((record, index) => <RecordRow record={record} key={index}/>) : <div className="empty-search">No matching records yet.</div>}</div><button className="floating-add" onClick={onAdd}><Plus size={21}/>Add record</button></>;
+  return <><div className="page-title"><p className="eyebrow">YOUR LIBRARY</p><h1>Health records</h1><span>{allItems.length} records organized in one secure place.</span></div><div className="search-box"><Search size={18}/><input aria-label="Search records" value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder="Search records, hospitals, doctors" />{searchTerm && <button className="clear-search" onClick={() => setSearchTerm('')} aria-label="Clear search"><X size={15}/></button>}</div>{searchTerm && <p className="search-result-label">Showing results for “{searchTerm}”</p>}<div className="filter-row">{filters.map(([value, label]) => <button key={value} className={recordFilter === value ? 'selected-filter' : ''} onClick={() => setRecordFilter(value)}>{label}</button>)}</div><div className="record-list">{filteredItems.length ? filteredItems.map((record, index) => <RecordRow record={record} key={index} onOpen={() => onOpenRecord(record)} />) : <div className="empty-search">No matching records yet.</div>}</div><button className="floating-add" onClick={onAdd}><Plus size={21}/>Add record</button></>;
 }
 
 function FamilyScreen({ activePerson, setActivePerson, familyList, onAddMember, onOpenMember }) {
