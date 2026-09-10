@@ -194,6 +194,7 @@ function AuthScreen({ onAuthenticated }) {
   const [screen, setScreen] = useState('welcome');
   const [phone, setPhone] = useState('');
   const [countryCode, setCountryCode] = useState('+91');
+  const [countryOpen, setCountryOpen] = useState(false);
   const [code, setCode] = useState('');
   const title = screen === 'signup' ? 'Create your account' : 'Welcome back';
   const submitPhone = (event) => { event.preventDefault(); setScreen('verify'); };
@@ -220,7 +221,7 @@ function AuthScreen({ onAuthenticated }) {
     <div className="form-heading"><p className="eyebrow">{screen === 'signup' ? 'WELCOME TO FAMILYHEALTH' : 'YOUR HEALTH SPACE'}</p><h1>{title}</h1><p>{screen === 'signup' ? 'Start building your secure health history.' : 'Sign in to see your health story.'}</p></div>
     <button className="google-button" onClick={onAuthenticated}><span className="google-mark" aria-hidden="true">G</span><span>Continue with Google</span></button>
     <div className="divider"><span/>or continue with phone<span/></div>
-    <form onSubmit={submitPhone}><label className="field-label" htmlFor="phone">PHONE NUMBER</label><div className="phone-field"><label className="country-select"><span className="sr-only">Country code</span><select value={countryCode} onChange={e => setCountryCode(e.target.value)}>{countryCodes.map(([country, codeValue]) => <option value={codeValue} key={`${country}-${codeValue}`}>{country}</option>)}</select></label><input id="phone" type="tel" inputMode="tel" placeholder="(555) 000-0000" value={phone} onChange={e => setPhone(e.target.value)} required/></div>
+    <form onSubmit={submitPhone}><label className="field-label" htmlFor="phone">PHONE NUMBER</label><div className="phone-field"><div className={`country-select ${countryOpen ? 'country-open' : ''}`}><button className="country-trigger" type="button" aria-label="Country code" aria-expanded={countryOpen} onClick={() => setCountryOpen(open => !open)}><span>{countryCode}</span><ChevronDown size={14}/></button>{countryOpen && <div className="country-menu" role="listbox">{countryCodes.map(([country, codeValue]) => <button className={countryCode === codeValue ? 'country-option selected' : 'country-option'} type="button" role="option" aria-selected={countryCode === codeValue} key={`${country}-${codeValue}`} onClick={() => { setCountryCode(codeValue); setCountryOpen(false); }}><span>{country}</span>{countryCode === codeValue && <Check size={14}/>}</button>)}</div>}</div><input id="phone" type="tel" inputMode="tel" placeholder="(555) 000-0000" value={phone} onChange={e => setPhone(e.target.value)} required/></div>
       <button className="auth-primary" type="submit">{screen === 'signup' ? 'Continue with phone' : 'Send sign-in code'} <ArrowUpRight size={18}/></button></form>
     <p className="terms-copy">By continuing, you agree to our <button>Terms of Use</button> and <button>Privacy Policy</button>.</p>
     <div className="switch-auth">{screen === 'signup' ? 'Already have an account?' : 'New to FamilyHealth?'} <button onClick={() => setScreen(screen === 'signup' ? 'signin' : 'signup')}>{screen === 'signup' ? 'Sign in' : 'Create an account'}</button></div>
