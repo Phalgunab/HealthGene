@@ -306,7 +306,6 @@ function HomeScreen({ activePerson, setActivePerson, items, onAdd, showNotificat
     <button className="person-picker" onClick={() => setActivePerson(nextPerson)}><span className="person-mini">{initials}</span><span><b>{activePerson}</b><small>Personal health space</small></span><ChevronDown size={18}/></button>
 
     <section className="status-card">
-      <div className="status-card-heading"><div className="status-icon"><Activity size={20}/></div><div><p>CARE STATUS</p><h2>Active care plan</h2></div><span className="status-check"><Check size={15}/></span></div>
       <div className="status-detail"><div className="status-detail-icon medication"><ShieldCheck size={17}/></div><div><p>RUNNING MEDICATION</p><b>Metformin 500 mg</b><span>Twice daily · Next dose today at 8:00 PM</span></div></div>
       <div className="status-detail"><div className="status-detail-icon followup"><CalendarDays size={17}/></div><div><p>IMMEDIATE FOLLOW-UP</p><b>Review blood work</b><span>With Dr. Sofia Ramos · Due Sep 16</span></div></div>
     </section>
