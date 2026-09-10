@@ -39,6 +39,12 @@ const notifications = [
 
 const searchExamples = ['Fever in last month', 'Apollo visit last month', 'Lab reports for Swetha'];
 
+const timelineDate = (record) => {
+  if (record.date === 'Today') return new Date();
+  const parsed = new Date(`${record.date}, ${new Date().getFullYear()}`);
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+};
+
 const recordKindConfig = {
   Scan: { title: 'Medical scan', source: 'Document scanned', tone: 'blue', icon: Camera },
   Upload: { title: 'Uploaded report', source: 'File uploaded', tone: 'lavender', icon: Upload },
@@ -151,6 +157,8 @@ function App() {
   const [editProfile, setEditProfile] = useState(false);
   const [showAddFamily, setShowAddFamily] = useState(false);
   const [editingMember, setEditingMember] = useState(null);
+  const [showTimeline, setShowTimeline] = useState(false);
+  const [timelineRecord, setTimelineRecord] = useState(null);
   const [activePerson, setActivePerson] = useState('Phalguna Rao BAMMIDI');
   const [familyList, setFamilyList] = useState(familyMembers);
   const [profileDetails, setProfileDetails] = useState({
@@ -198,14 +206,14 @@ function App() {
       {showSearch && <SearchPanel searchTerm={searchTerm} setSearchTerm={setSearchTerm} chooseExample={(example) => { setSearchTerm(example); setShowSearch(false); setTab('Records'); }} />}
 
       <div className="content">
-        {tab === 'Home' && <HomeScreen activePerson={activePerson} setActivePerson={setActivePerson} items={items} onAdd={() => setShowAdd(true)} showNotifications={showNotifications} toggleNotifications={() => setShowNotifications(open => !open)} />}
+        {tab === 'Home' && (showTimeline ? <TimelinePage items={items} selectedRecord={timelineRecord} onSelectRecord={setTimelineRecord} onBack={() => { setShowTimeline(false); setTimelineRecord(null); }} /> : <HomeScreen activePerson={activePerson} setActivePerson={setActivePerson} items={items} onAdd={() => setShowAdd(true)} onViewTimeline={() => setShowTimeline(true)} showNotifications={showNotifications} toggleNotifications={() => setShowNotifications(open => !open)} />)}
         {tab === 'Records' && <RecordsScreen items={items} searchTerm={searchTerm} setSearchTerm={setSearchTerm} onAdd={() => setShowAdd(true)} />}
         {tab === 'Family' && (showAddFamily ? <AddFamilyMemberPage onBack={() => setShowAddFamily(false)} onSave={(member) => { setFamilyList(current => [...current, member]); setActivePerson(member.name); setShowAddFamily(false); }} /> : editingMember ? <EditFamilyMemberPage member={editingMember} onBack={() => setEditingMember(null)} onSave={(updatedMember) => { setFamilyList(current => current.map(member => member.name === editingMember.name ? updatedMember : member)); setActivePerson(updatedMember.name); setEditingMember(null); }} onDelete={() => { const remaining = familyList.filter(member => member.name !== editingMember.name); setFamilyList(remaining); setActivePerson(remaining[0]?.name || ''); setEditingMember(null); }} /> : <FamilyScreen activePerson={activePerson} setActivePerson={setActivePerson} familyList={familyList} onAddMember={() => setShowAddFamily(true)} onOpenMember={setEditingMember} />)}
         {tab === 'Profile' && (editProfile ? <EditProfilePage details={profileDetails} onBack={() => setEditProfile(false)} onSave={(details) => { setProfileDetails(details); setActivePerson(details.fullName); setEditProfile(false); }} /> : settingsPage ? <SettingsPage page={settingsPage} activePerson={activePerson} items={items} onBack={() => setSettingsPage(null)} /> : <ProfileScreen activePerson={activePerson} profileDetails={profileDetails} onLogout={() => setAuthenticated(false)} openSettings={setSettingsPage} openEditProfile={() => setEditProfile(true)} />)}
       </div>
 
       <nav className="bottom-nav">
-        {[['Home', Home], ['Records', FileText], ['Family', Users], ['Profile', Settings]].map(([label, Icon]) => <button key={label} onClick={() => { setSettingsPage(null); setEditProfile(false); setShowAddFamily(false); setEditingMember(null); setTab(label); }} className={tab === label ? 'nav-active' : ''}><Icon size={20}/><span>{label}</span></button>)}
+        {[['Home', Home], ['Records', FileText], ['Family', Users], ['Profile', Settings]].map(([label, Icon]) => <button key={label} onClick={() => { setSettingsPage(null); setEditProfile(false); setShowAddFamily(false); setEditingMember(null); setShowTimeline(false); setTimelineRecord(null); setTab(label); }} className={tab === label ? 'nav-active' : ''}><Icon size={20}/><span>{label}</span></button>)}
       </nav>
 
       {showAdd && <AddSheet close={() => setShowAdd(false)} addRecord={addRecord} />}
@@ -292,7 +300,7 @@ function LegalDialog({ page, close }) {
   </div>;
 }
 
-function HomeScreen({ activePerson, setActivePerson, items, onAdd, showNotifications, toggleNotifications }) {
+function HomeScreen({ activePerson, setActivePerson, items, onAdd, onViewTimeline, showNotifications, toggleNotifications }) {
   const personCycle = ['Phalguna Rao BAMMIDI', 'Swetha NAYANI', 'Vinay Kumar DURGAM'];
   const currentIndex = personCycle.indexOf(activePerson);
   const nextPerson = personCycle[(currentIndex + 1) % personCycle.length];
@@ -314,18 +322,37 @@ function HomeScreen({ activePerson, setActivePerson, items, onAdd, showNotificat
       <div className="status-detail"><div className="status-detail-icon followup"><CalendarDays size={17}/></div><div><p>IMMEDIATE FOLLOW-UP</p><b>{followUp[0]}</b><span>{followUp[1]}</span></div></div>
     </section>
 
-    <div className="section-heading"><div><p className="eyebrow">AT A GLANCE</p><h2>Your health snapshot</h2></div><button className="link-button">See all</button></div>
+    <div className="section-heading"><div><p className="eyebrow">AT A GLANCE</p><h2>Your health snapshot</h2></div><button className="link-button" onClick={onViewTimeline}>See all</button></div>
     <div className="snapshot-grid">
       <div className="snapshot-card"><div className="metric-icon purple"><Activity size={19}/></div><span>Latest checkup</span><b>Blood work</b><small>Today</small></div>
       <div className="snapshot-card"><div className="metric-icon coral"><CalendarDays size={19}/></div><span>Next reminder</span><b>Dental cleaning</b><small>Oct 14</small></div>
     </div>
 
-    <div className="section-heading recent"><div><p className="eyebrow">TIMELINE</p><h2>Recent records</h2></div><button className="link-button">View history</button></div>
+    <div className="section-heading recent"><div><p className="eyebrow">TIMELINE</p><h2>Recent records</h2></div><button className="link-button" onClick={onViewTimeline}>View history</button></div>
     <div className="timeline">{items.slice(0,3).map((r, i) => <RecordRow record={r} key={i}/>)}</div>
     <button className="add-record" onClick={onAdd}><Plus size={21}/><span>Add a health record</span></button>
     <p className="privacy-note"><LockKeyhole size={14}/>Your records are private and encrypted</p>
   </>;
 }
+
+function TimelinePage({ items, selectedRecord, onSelectRecord, onBack }) {
+  const [selectedMonth, setSelectedMonth] = useState('All');
+  const months = [...new Set(items.map(record => timelineDate(record).toLocaleString('en-US', { month: 'short' })))];
+  const visibleItems = items.filter(record => selectedMonth === 'All' || timelineDate(record).toLocaleString('en-US', { month: 'short' }) === selectedMonth).sort((a, b) => timelineDate(b) - timelineDate(a));
+
+  if (selectedRecord) return <RecordDetailPage record={selectedRecord} onBack={() => onSelectRecord(null)} />;
+
+  return <div className="timeline-page"><button className="settings-back" onClick={onBack}><ArrowLeft size={18}/>Back to home</button><div className="timeline-heading"><p className="eyebrow">YOUR HEALTH STORY</p><h1>Health timeline</h1><p>Move through your care history by month, then open any record for the full visit details.</p></div><div className="timeline-zoom" aria-label="Timeline month filter"><button className={selectedMonth === 'All' ? 'timeline-month active' : 'timeline-month'} onClick={() => setSelectedMonth('All')}>All</button>{months.map(month => <button className={selectedMonth === month ? 'timeline-month active' : 'timeline-month'} key={month} onClick={() => setSelectedMonth(month)}>{month}</button>)}</div><div className="visual-timeline">{visibleItems.length ? visibleItems.map((record, index) => { const date = timelineDate(record); const Icon = record.icon; return <button className="timeline-event" key={`${record.title}-${index}`} onClick={() => onSelectRecord(record)}><span className="timeline-line"/><span className="timeline-dot"/><span className="timeline-date"><b>{date.toLocaleString('en-US', { month: 'short' })}</b><small>{date.getDate()}</small></span><span className="timeline-event-card"><span className={`record-icon ${record.tone}`}><Icon size={17}/></span><span><b>{record.title}</b><small>{record.source}</small></span><ChevronRight size={16}/></span></button>; }) : <div className="empty-search">No records in this month yet.</div>}</div></div>;
+}
+
+function RecordDetailPage({ record, onBack }) {
+  const date = timelineDate(record);
+  const Icon = record.icon;
+
+  return <div className="record-detail-page"><button className="settings-back" onClick={onBack}><ArrowLeft size={18}/>Back to timeline</button><div className="record-detail-heading"><span className={`record-icon ${record.tone}`}><Icon size={22}/></span><p className="eyebrow">HEALTH RECORD</p><h1>{record.title}</h1><span>{date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span></div><div className="record-detail-card"><DetailField label="Hospital / clinic" value={record.hospital || record.source}/><DetailField label="Doctor / provider" value={record.doctor || 'Not provided'}/><DetailField label="Amount" value={record.amount || 'Not provided'}/><DetailField label="Notes" value={record.notes || 'No notes added'}/></div></div>;
+}
+
+function DetailField({ label, value }) { return <div className="detail-field"><p>{label}</p><b>{value}</b></div>; }
 
 function RecordRow({ record }) { const Icon = record.icon; return <button className="record-row"><div className={`record-icon ${record.tone}`}><Icon size={19}/></div><div className="record-copy"><b>{record.title}</b><span>{record.source}</span></div><div className="record-date">{record.date}<ChevronRight size={16}/></div></button> }
 
