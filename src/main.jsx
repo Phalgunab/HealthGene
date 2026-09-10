@@ -244,7 +244,14 @@ function AuthScreen() {
   const recaptchaRef = useRef(null);
   const title = screen === 'signup' ? 'Create your account' : 'Welcome back';
   const showAuthError = (error) => {
-    setAuthError(error?.code === 'auth/popup-closed-by-user' ? 'Google sign-in was cancelled.' : error?.message || 'Authentication failed. Please try again.');
+    const messages = {
+      'auth/configuration-not-found': 'Firebase Authentication is not configured for this project. Enable Google and Phone sign-in in Firebase Console.',
+      'auth/operation-not-allowed': 'This sign-in method is disabled. Enable it in Firebase Console → Authentication → Sign-in method.',
+      'auth/unauthorized-domain': 'This website is not authorized in Firebase. Add phalgunab.github.io under Authentication → Settings → Authorized domains.',
+      'auth/popup-closed-by-user': 'Google sign-in was cancelled.',
+      'auth/invalid-phone-number': 'Enter a valid phone number with the selected country code.',
+    };
+    setAuthError(messages[error?.code] || error?.message || 'Authentication failed. Please try again.');
   };
   const loginWithGoogle = async () => {
     setAuthError('');
