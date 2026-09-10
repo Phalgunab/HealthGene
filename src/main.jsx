@@ -8,12 +8,6 @@ import {
   Search, Settings, ShieldCheck, Sparkles, Upload, Users, X, ArrowLeft, Check, Smartphone, LogOut
 } from 'lucide-react';
 import './styles.css';
-import './logout.css';
-import './google.css';
-import './phone.css';
-import './legal.css';
-import './notifications.css';
-import './search.css';
 
 const countryCodes = [
   ['India (+91)', '+91'],
