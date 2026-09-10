@@ -148,6 +148,7 @@ function App() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [settingsPage, setSettingsPage] = useState(null);
   const [activePerson, setActivePerson] = useState('Phalguna Rao BAMMIDI');
   const [items, setItems] = useState(records);
 
@@ -187,7 +188,7 @@ function App() {
         {tab === 'Home' && <HomeScreen activePerson={activePerson} setActivePerson={setActivePerson} items={items} onAdd={() => setShowAdd(true)} showNotifications={showNotifications} toggleNotifications={() => setShowNotifications(open => !open)} />}
         {tab === 'Records' && <RecordsScreen items={items} searchTerm={searchTerm} setSearchTerm={setSearchTerm} onAdd={() => setShowAdd(true)} />}
         {tab === 'Family' && <FamilyScreen activePerson={activePerson} setActivePerson={setActivePerson} />}
-        {tab === 'Profile' && <ProfileScreen activePerson={activePerson} onLogout={() => setAuthenticated(false)} />}
+        {tab === 'Profile' && (settingsPage ? <SettingsPage page={settingsPage} activePerson={activePerson} items={items} onBack={() => setSettingsPage(null)} /> : <ProfileScreen activePerson={activePerson} onLogout={() => setAuthenticated(false)} openSettings={setSettingsPage} />)}
       </div>
 
       <nav className="bottom-nav">
@@ -323,11 +324,42 @@ function FamilyScreen({ activePerson, setActivePerson }) {
 
   return <><div className="page-title family-title"><p className="eyebrow">SHARED CARE</p><h1>Family health</h1><span>Care for the people you love.</span></div><div className="family-tip"><Sparkles size={18}/><span>Keep everyone's care history organized in one place.</span></div><div className="people-list">{people.map(([initial,name,tone])=><button onClick={()=>setActivePerson(name)} className={`person-row ${activePerson===name?'person-selected':''}`} key={name}><span className={`family-avatar ${tone}`}>{initial}</span><span><b>{name}</b><small>{name === 'Phalguna Rao BAMMIDI' ? 'Your personal health space' : `${name}'s health records`}</small></span>{activePerson===name?<span className="active-dot">✓</span>:<ChevronRight size={18}/>}</button>)}</div><button className="invite-button"><Plus size={19}/>Add family member</button><p className="family-footnote"><ShieldCheck size={14}/>You control who can view and manage each profile.</p></> }
 
-function ProfileScreen({ activePerson, onLogout }) {
+function ProfileScreen({ activePerson, onLogout, openSettings }) {
   const initials = activePerson.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase();
 
-  return <><div className="profile-hero"><span className="large-avatar">{initials}</span><h1>{activePerson}</h1><span>Personal health space</span><button>Edit profile</button></div><div className="settings-list">{[[ShieldCheck,'Privacy & security'],[Bell,'Notifications'],[Users,'Sharing & family access'],[FileText,'Export my records']].map(([Icon,label])=><button key={label}><span><Icon size={20}/>{label}</span><ChevronRight size={18}/></button>)}</div><button className="logout-button" onClick={onLogout}><LogOut size={16}/>Log out</button><p className="profile-version">FamilyHealth v1.0 · Your data stays yours</p></>;
+  return <><div className="profile-hero"><span className="large-avatar">{initials}</span><h1>{activePerson}</h1><span>Personal health space</span><button>Edit profile</button></div><div className="settings-list">{[[ShieldCheck,'Privacy & security','privacy'],[Bell,'Notifications','notifications'],[Users,'Sharing & family access','sharing'],[FileText,'Export my records','export']].map(([Icon,label,page])=><button key={label} onClick={() => openSettings(page)}><span><Icon size={20}/>{label}</span><ChevronRight size={18}/></button>)}</div><button className="logout-button" onClick={onLogout}><LogOut size={16}/>Log out</button><p className="profile-version">FamilyHealth v1.0 · Your data stays yours</p></>;
 }
+
+function SettingsPage({ page, activePerson, items, onBack }) {
+  const [privateRecords, setPrivateRecords] = useState(true);
+  const [updatesEnabled, setUpdatesEnabled] = useState(true);
+  const [remindersEnabled, setRemindersEnabled] = useState(true);
+
+  const pageDetails = {
+    privacy: { label: 'PRIVACY & SECURITY', title: 'Privacy & security', description: 'Your health information stays under your control.', icon: ShieldCheck },
+    notifications: { label: 'YOUR PREFERENCES', title: 'Notifications', description: 'Choose which updates FamilyHealth can send you.', icon: Bell },
+    sharing: { label: 'FAMILY ACCESS', title: 'Sharing & family access', description: 'Review how your family profiles are organized.', icon: Users },
+    export: { label: 'YOUR DATA', title: 'Export my records', description: 'Download a copy of your health timeline.', icon: FileText },
+  }[page];
+  const Icon = pageDetails.icon;
+
+  const exportRecords = () => {
+    const header = 'Title,Source,Date,Hospital,Doctor,Amount,Notes';
+    const rows = items.map(record => [record.title, record.source, record.date, record.hospital, record.doctor, record.amount, record.notes].map(value => `"${String(value || '').replaceAll('"', '""')}"`).join(','));
+    const blob = new Blob([[header, ...rows].join('\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'familyhealth-records.csv';
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return <div className="settings-page"><button className="settings-back" onClick={onBack}><ArrowLeft size={18}/>Back to profile</button><div className="settings-page-heading"><span className="settings-page-icon"><Icon size={21}/></span><p className="eyebrow">{pageDetails.label}</p><h1>{pageDetails.title}</h1><p>{pageDetails.description}</p></div>{page === 'privacy' && <div className="settings-card"><SettingToggle label="Keep records private" detail="Only you can view your health records." value={privateRecords} onChange={setPrivateRecords}/><SettingRow label="Data processing" detail="Document and image reading happens in your browser." /></div>}{page === 'notifications' && <div className="settings-card"><SettingToggle label="Health updates" detail="New records, results, and care activity." value={updatesEnabled} onChange={setUpdatesEnabled}/><SettingToggle label="Appointment reminders" detail="Get reminders for upcoming care." value={remindersEnabled} onChange={setRemindersEnabled}/></div>}{page === 'sharing' && <div className="settings-card"><SettingRow label={activePerson} detail="Personal health space · Owner" /><SettingRow label="Swetha NAYANI" detail="Family profile · Private by default" /><SettingRow label="Vinay Kumar DURGAM" detail="Family profile · Private by default" /></div>}{page === 'export' && <div className="settings-card export-card"><SettingRow label="Health timeline" detail={`${items.length} records ready to export`} /><button className="export-action" onClick={exportRecords}><FileText size={17}/>Download CSV export</button><p className="settings-note"><ShieldCheck size={14}/>Your export is generated on this device.</p></div>}</div>;
+}
+
+function SettingToggle({ label, detail, value, onChange }) { return <div className="setting-row"><span><b>{label}</b><small>{detail}</small></span><button className={`setting-toggle ${value ? 'toggle-on' : ''}`} onClick={() => onChange(!value)} aria-pressed={value} aria-label={`${label}: ${value ? 'on' : 'off'}`}><i/></button></div>; }
+function SettingRow({ label, detail }) { return <div className="setting-row"><span><b>{label}</b><small>{detail}</small></span><Check size={17} className="setting-check"/></div>; }
 
 function AddSheet({ close, addRecord }) {
   const [recordType, setRecordType] = useState('Scan');
