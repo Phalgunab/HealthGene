@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import * as pdfjsLib from 'pdfjs-dist';
 import Tesseract from 'tesseract.js';
@@ -42,7 +42,6 @@ const searchExamples = ['Fever in last month', 'Apollo visit last month', 'Lab r
 const recordKindConfig = {
   Scan: { title: 'Medical scan', source: 'Document scanned', tone: 'blue', icon: Camera },
   Upload: { title: 'Uploaded report', source: 'File uploaded', tone: 'lavender', icon: Upload },
-  Photo: { title: 'Health photo', source: 'Photo captured', tone: 'peach', icon: Image },
 };
 
 const createRecordForm = (type = 'Scan') => ({
@@ -419,11 +418,12 @@ function AddSheet({ close, addRecord }) {
   const [recordType, setRecordType] = useState('Scan');
   const [form, setForm] = useState(createRecordForm('Scan'));
   const [messageText, setMessageText] = useState('');
+  const scanInputRef = useRef(null);
+  const uploadInputRef = useRef(null);
 
   const typeMeta = {
-    Scan: { label: 'Scan a document', hint: 'Use your camera for reports or results', tone: 'blue', icon: Camera },
-    Upload: { label: 'Upload a file', hint: 'PDFs, screenshots, or images', tone: 'lavender', icon: Upload },
-    Photo: { label: 'Take a health photo', hint: 'Track changes over time', tone: 'peach', icon: Image },
+    Scan: { label: 'Scan a document', hint: 'Open your camera and capture a document', tone: 'blue', icon: Camera },
+    Upload: { label: 'Upload a file', hint: 'Choose a PDF, screenshot, or image', tone: 'lavender', icon: Upload },
   };
 
   const setField = (field) => (event) => {
@@ -458,28 +458,39 @@ function AddSheet({ close, addRecord }) {
     setForm(createRecordForm(recordType));
   };
 
-  const handleFileUpload = async (event) => {
+  const handleFileUpload = async (event, type) => {
     const file = event.target.files?.[0];
+    if (!file) return;
+    setRecordType(type);
+    setForm((current) => ({ ...current, type }));
     await handleUploadedDocument(file, setForm);
     event.target.value = '';
+  };
+
+  const openInput = (type) => {
+    setRecordType(type);
+    setForm((current) => ({ ...current, type }));
+    (type === 'Scan' ? scanInputRef : uploadInputRef).current?.click();
   };
 
   return <div className="sheet-backdrop" onClick={close}><div className="add-sheet" onClick={e=>e.stopPropagation()}><div className="sheet-handle"/><div className="sheet-title"><div><p className="eyebrow">KEEP YOUR HISTORY CURRENT</p><h2>Add a record</h2></div><button onClick={close}><X size={20}/></button></div>
     <div className="add-option-grid">{Object.keys(typeMeta).map((type) => {
       const Icon = typeMeta[type].icon;
-      return <button key={type} type="button" className={`add-option ${recordType === type ? 'active' : ''}`} onClick={() => handleTypeChange(type)}>
+      return <button key={type} type="button" className={`add-option ${recordType === type ? 'active' : ''}`} onClick={() => openInput(type)}>
         <span className={`option-icon ${typeMeta[type].tone}`}><Icon size={21}/></span>
         <span><b>{typeMeta[type].label}</b><small>{typeMeta[type].hint}</small></span>
         <ChevronRight size={18}/>
       </button>;
     })}</div>
+    <input ref={scanInputRef} className="hidden-file-input" type="file" accept="image/*" capture="environment" onChange={(event) => handleFileUpload(event, 'Scan')} />
+    <input ref={uploadInputRef} className="hidden-file-input" type="file" accept=".pdf,image/*" onChange={(event) => handleFileUpload(event, 'Upload')} />
     <div className="message-import-box">
       <div className="field-group"><label htmlFor="message-import">Read from messages</label><textarea id="message-import" rows="3" value={messageText} onChange={(e) => setMessageText(e.target.value)} placeholder="Example: 'Hospital: Mercy Heart Center. Doctor: Dr. A. Nair. Paid $260 on Sep 03.'" /></div>
       <button className="message-import-button" type="button" onClick={importFromMessage}>Auto-fill from message</button>
     </div>
     <div className="file-import-box">
       <label className="file-import-label" htmlFor="document-upload">Upload PDF or image to auto-fill</label>
-      <input id="document-upload" type="file" accept=".pdf,image/*" onChange={handleFileUpload} />
+      <input id="document-upload" type="file" accept=".pdf,image/*" onChange={(event) => handleFileUpload(event, 'Upload')} />
     </div>
     <div className="record-form">
       <div className="field-group"><label htmlFor="record-title">Title</label><input id="record-title" value={form.title} onChange={setField('title')} placeholder="Annual checkup" /></div>
