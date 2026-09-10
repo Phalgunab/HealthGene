@@ -10,7 +10,7 @@ import {
 import './styles.css';
 import { auth, db, googleProvider } from './firebase';
 import { onAuthStateChanged, RecaptchaVerifier, signInWithPhoneNumber, signInWithPopup, signOut } from 'firebase/auth';
-import { addDoc, collection, deleteDoc, doc, getDocs, getDoc, setDoc, writeBatch } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, getDocs, getDoc, setDoc } from 'firebase/firestore';
 
 const countryCodes = [
   ['India (+91)', '+91'],
@@ -19,20 +19,8 @@ const countryCodes = [
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
 
-const familyMembers = [
-  { name: 'Phalguna Rao BAMMIDI', initial: 'P', tone: 'purple' },
-  { name: 'Swetha NAYANI', initial: 'S', tone: 'blue' },
-  { name: 'Vinay Kumar DURGAM', initial: 'V', tone: 'coral' },
-];
-
-const records = [
-  { kind: 'lab', title: 'Annual blood work', source: 'Cedar Health Lab', date: 'Today', tone: 'lavender', icon: Activity, owner: 'Phalguna Rao BAMMIDI', hospital: 'Cedar Health Lab', doctor: 'Dr. Sofia Ramos', amount: '$180', notes: 'Routine lab work completed; no critical changes reported.' },
-  { kind: 'report', title: 'Dermatology visit', source: 'Dr. Sofia Ramos', date: 'Aug 24', tone: 'peach', icon: FileText, owner: 'Phalguna Rao BAMMIDI', hospital: 'Northside Dermatology', doctor: 'Dr. Sofia Ramos', amount: '$120', notes: 'Skin checkup and treatment follow-up plan.' },
-  { kind: 'image', title: 'Knee MRI scan', source: 'Riverview Imaging', date: 'Aug 12', tone: 'blue', icon: Image, owner: 'Swetha NAYANI', hospital: 'Riverview Imaging', doctor: 'Dr. K. Mehta', amount: '$440', notes: 'Knee MRI reviewed for pain management and recovery plan.' },
-  { kind: 'report', title: 'Cardiology consultation', source: 'Mercy Heart Center', date: 'Sep 03', tone: 'mint', icon: ShieldCheck, owner: 'Swetha NAYANI', hospital: 'Mercy Heart Center', doctor: 'Dr. A. Nair', amount: '$260', notes: 'Blood pressure reviewed; continued monitoring advised.' },
-  { kind: 'lab', title: 'Routine CBC panel', source: 'CityCare Diagnostics', date: 'Sep 08', tone: 'lavender', icon: Activity, owner: 'Vinay Kumar DURGAM', hospital: 'CityCare Diagnostics', doctor: 'Dr. L. Chowdary', amount: '$95', notes: 'Complete blood count normal; no follow-up needed.' },
-  { kind: 'report', title: 'Orthopedic appointment', source: 'Greenfield Orthopedic Clinic', date: 'Sep 01', tone: 'peach', icon: FileText, owner: 'Vinay Kumar DURGAM', hospital: 'Greenfield Orthopedic Clinic', doctor: 'Dr. R. Singh', amount: '$175', notes: 'Mobility assessment and rehab exercise recommendations.' },
-];
+const familyMembers = [];
+const records = [];
 
 const notifications = [
   { id: 1, title: 'New lab result added', detail: 'Your annual blood work is ready to review.', time: '10 min ago', unread: true },
@@ -172,10 +160,10 @@ function App() {
   const [showTimeline, setShowTimeline] = useState(false);
   const [timelineRecord, setTimelineRecord] = useState(null);
   const [recordDetail, setRecordDetail] = useState(null);
-  const [activePerson, setActivePerson] = useState('Phalguna Rao BAMMIDI');
-  const [familyList, setFamilyList] = useState(familyMembers);
+  const [activePerson, setActivePerson] = useState('My profile');
+  const [familyList, setFamilyList] = useState([]);
   const [profileDetails, setProfileDetails] = useState({
-    fullName: 'Phalguna Rao BAMMIDI',
+    fullName: '',
     dateOfBirth: '',
     gender: '',
     bloodGroup: '',
@@ -183,7 +171,7 @@ function App() {
     weight: '',
     emergencyContact: '',
   });
-  const [items, setItems] = useState(records);
+  const [items, setItems] = useState([]);
   const activeInitials = activePerson.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase();
 
   useEffect(() => onAuthStateChanged(auth, (user) => {
@@ -204,17 +192,18 @@ function App() {
           getDocs(collection(userRef, 'records')),
         ]);
 
-        if (profileSnapshot.exists()) setProfileDetails(current => ({ ...current, ...profileSnapshot.data() }));
-        if (!familySnapshot.empty) setFamilyList(familySnapshot.docs.map(snapshot => ({ id: snapshot.id, ...snapshot.data() })));
-        if (!recordsSnapshot.empty) setItems(recordsSnapshot.docs.map(snapshot => hydrateRecord(snapshot.id, snapshot.data())));
-
-        if (!profileSnapshot.exists() || familySnapshot.empty || recordsSnapshot.empty) {
-          const batch = writeBatch(db);
-          if (!profileSnapshot.exists()) batch.set(doc(userRef, 'profile', 'details'), profileDetails);
-          if (familySnapshot.empty) familyMembers.forEach(member => batch.set(doc(collection(userRef, 'familyMembers')), member));
-          if (recordsSnapshot.empty) records.forEach(record => batch.set(doc(collection(userRef, 'records')), serializeRecord(record)));
-          await batch.commit();
+        if (profileSnapshot.exists()) {
+          const profile = profileSnapshot.data();
+          setProfileDetails(current => ({ ...current, ...profile }));
+          if (profile.fullName) setActivePerson(profile.fullName);
+        } else if (currentUser.displayName) {
+          setProfileDetails(current => ({ ...current, fullName: currentUser.displayName }));
+          setActivePerson(currentUser.displayName);
         }
+        setFamilyList(familySnapshot.docs.map(snapshot => ({ id: snapshot.id, ...snapshot.data() })));
+        setItems(recordsSnapshot.docs.map(snapshot => hydrateRecord(snapshot.id, snapshot.data())));
+
+        if (!profileSnapshot.exists()) await setDoc(doc(userRef, 'profile', 'details'), { fullName: currentUser.displayName || '' }, { merge: true });
       } catch (error) {
         console.error('Could not load Firestore data', error);
       }
@@ -439,7 +428,7 @@ function HomeScreen({ activePerson, setActivePerson, items, onAdd, onViewTimelin
     'Phalguna Rao BAMMIDI': ['Review blood work', 'With Dr. Sofia Ramos · Due Sep 16'],
     'Swetha NAYANI': ['Review knee MRI', 'With Dr. K. Mehta · Due Sep 20'],
     'Vinay Kumar DURGAM': ['Review CBC panel', 'With Dr. L. Chowdary · Due Sep 18'],
-  }[activePerson] || ['Schedule health review', 'Follow-up date to be confirmed'];
+  }[activePerson] || ['No follow-up scheduled', 'Add a care plan when needed'];
 
   return <>
     <div className="hello-row"><div><p className="eyebrow">TUESDAY, SEPTEMBER 9</p><h1>Good morning, {firstName}</h1></div><button className="bell" onClick={toggleNotifications} aria-label="Notifications" aria-expanded={showNotifications}><Bell size={19}/><i/><span className="notification-count">{notifications.filter(notification => notification.unread).length}</span></button></div>
@@ -487,7 +476,7 @@ function RecordRow({ record, onOpen }) { const Icon = record.icon; return <butto
 
 function RecordsScreen({ items, searchTerm, setSearchTerm, onAdd, onOpenRecord }) {
   const [recordFilter, setRecordFilter] = useState('all');
-  const allItems = items.concat([{kind:'report', title:'COVID-19 vaccination', source:'Central Medical Centre', date:'Jul 28', tone:'mint', icon: ShieldCheck, hospital:'Central Medical Centre', doctor:'Not provided', amount:'Not provided', notes:'Vaccination record.'}]);
+  const allItems = items;
   const normalizedSearch = searchTerm.toLowerCase().trim();
   const filteredItems = allItems.filter(record => {
     const matchesType = recordFilter === 'all' || record.kind === recordFilter;
@@ -502,7 +491,7 @@ function RecordsScreen({ items, searchTerm, setSearchTerm, onAdd, onOpenRecord }
 function FamilyScreen({ activePerson, setActivePerson, familyList, onAddMember, onOpenMember }) {
   const people = familyList.map(({ name, initial, tone, relationship }) => [initial, name, tone, relationship]);
 
-  return <><div className="page-title family-title"><p className="eyebrow">SHARED CARE</p><h1>Family health</h1><span>Care for the people you love.</span></div><div className="family-tip"><Sparkles size={18}/><span>Keep everyone's care history organized in one place.</span></div><div className="people-list">{people.map(([initial,name,tone,relationship])=><button onClick={()=>{ setActivePerson(name); onOpenMember(familyList.find(member => member.name === name)); }} className={`person-row ${activePerson===name?'person-selected':''}`} key={name}><span className={`family-avatar ${tone}`}>{initial}</span><span><b>{name}</b><small>{name === 'Phalguna Rao BAMMIDI' ? 'Your personal health space' : relationship || `${name}'s health records`}</small></span><ChevronRight size={18}/></button>)}</div><button className="invite-button" onClick={onAddMember}><Plus size={19}/>Add family member</button><p className="family-footnote"><ShieldCheck size={14}/>You control who can view and manage each profile.</p></> }
+  return <><div className="page-title family-title"><p className="eyebrow">SHARED CARE</p><h1>Family health</h1><span>Care for the people you love.</span></div><div className="family-tip"><Sparkles size={18}/><span>Keep everyone's care history organized in one place.</span></div>{people.length ? <div className="people-list">{people.map(([initial,name,tone,relationship])=><button onClick={()=>{ setActivePerson(name); onOpenMember(familyList.find(member => member.name === name)); }} className={`person-row ${activePerson===name?'person-selected':''}`} key={name}><span className={`family-avatar ${tone}`}>{initial}</span><span><b>{name}</b><small>{relationship || `${name}'s health records`}</small></span><ChevronRight size={18}/></button>)}</div> : <div className="empty-search">No family members added yet.</div>}<button className="invite-button" onClick={onAddMember}><Plus size={19}/>Add family member</button><p className="family-footnote"><ShieldCheck size={14}/>You control who can view and manage each profile.</p></> }
 
 function AddFamilyMemberPage({ onBack, onSave }) {
   const [name, setName] = useState('');
