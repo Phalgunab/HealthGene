@@ -299,6 +299,11 @@ function HomeScreen({ activePerson, setActivePerson, items, onAdd, showNotificat
   const nextPerson = personCycle[(currentIndex + 1) % personCycle.length];
   const firstName = activePerson.split(' ')[0];
   const initials = activePerson.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase();
+  const followUp = {
+    'Phalguna Rao BAMMIDI': ['Review blood work', 'With Dr. Sofia Ramos · Due Sep 16'],
+    'Swetha NAYANI': ['Review knee MRI', 'With Dr. K. Mehta · Due Sep 20'],
+    'Vinay Kumar DURGAM': ['Review CBC panel', 'With Dr. L. Chowdary · Due Sep 18'],
+  }[activePerson] || ['Schedule health review', 'Follow-up date to be confirmed'];
 
   return <>
     <div className="hello-row"><div><p className="eyebrow">TUESDAY, SEPTEMBER 9</p><h1>Good morning, {firstName}</h1></div><button className="bell" onClick={toggleNotifications} aria-label="Notifications" aria-expanded={showNotifications}><Bell size={19}/><i/><span className="notification-count">{notifications.filter(notification => notification.unread).length}</span></button></div>
@@ -306,8 +311,8 @@ function HomeScreen({ activePerson, setActivePerson, items, onAdd, showNotificat
     <button className="person-picker" onClick={() => setActivePerson(nextPerson)}><span className="person-mini">{initials}</span><span><b>{activePerson}</b><small>Personal health space</small></span><ChevronDown size={18}/></button>
 
     <section className="status-card">
-      <div className="status-detail"><div className="status-detail-icon medication"><ShieldCheck size={17}/></div><div><p>RUNNING MEDICATION</p><b>Metformin 500 mg</b><span>Twice daily · Next dose today at 8:00 PM</span></div></div>
-      <div className="status-detail"><div className="status-detail-icon followup"><CalendarDays size={17}/></div><div><p>IMMEDIATE FOLLOW-UP</p><b>Review blood work</b><span>With Dr. Sofia Ramos · Due Sep 16</span></div></div>
+      <div className="status-detail"><div className="status-detail-icon medication"><ShieldCheck size={17}/></div><div><p>RUNNING MEDICATION</p><b>No running medication</b><span>Nothing active on this profile</span></div></div>
+      <div className="status-detail"><div className="status-detail-icon followup"><CalendarDays size={17}/></div><div><p>IMMEDIATE FOLLOW-UP</p><b>{followUp[0]}</b><span>{followUp[1]}</span></div></div>
     </section>
 
     <div className="section-heading"><div><p className="eyebrow">AT A GLANCE</p><h2>Your health snapshot</h2></div><button className="link-button">See all</button></div>
