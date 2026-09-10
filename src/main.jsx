@@ -204,7 +204,7 @@ function App() {
         <div className="top-actions"><button className="icon-button" onClick={() => setShowSearch(open => !open)} aria-label="Search" aria-expanded={showSearch}><Search size={20}/></button><button className="avatar" onClick={() => setTab('Profile')} aria-label={`${activePerson} profile`}>{activeInitials}</button></div>
       </header>
 
-      {showSearch && <SearchPanel searchTerm={searchTerm} setSearchTerm={setSearchTerm} chooseExample={(example) => { setSearchTerm(example); setShowSearch(false); setTab('Records'); }} />}
+      {showSearch && <SearchPanel searchTerm={searchTerm} setSearchTerm={setSearchTerm} submitSearch={() => { setShowSearch(false); setTab('Records'); }} chooseExample={(example) => { setSearchTerm(example); setShowSearch(false); setTab('Records'); }} />}
 
       <div className="content">
         {tab === 'Home' && (showTimeline ? <TimelinePage items={items} selectedRecord={timelineRecord} onSelectRecord={setTimelineRecord} onBack={() => { setShowTimeline(false); setTimelineRecord(null); }} /> : <HomeScreen activePerson={activePerson} setActivePerson={setActivePerson} items={items} onAdd={() => setShowAdd(true)} onViewTimeline={() => setShowTimeline(true)} showNotifications={showNotifications} toggleNotifications={() => setShowNotifications(open => !open)} />)}
@@ -271,9 +271,9 @@ function NotificationPanel() {
   </section>;
 }
 
-function SearchPanel({ searchTerm, setSearchTerm, chooseExample }) {
+function SearchPanel({ searchTerm, setSearchTerm, submitSearch, chooseExample }) {
   return <section className="search-panel" aria-label="Search health records">
-    <div className="search-panel-input"><Search size={17}/><input autoFocus value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder="Search health records" /></div>
+    <form className="search-panel-input" onSubmit={event => { event.preventDefault(); submitSearch(); }}><Search size={17}/><input autoFocus value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder="Search health records" /></form>
     <p className="search-examples-label">TRY A FILTER</p>
     <div className="search-examples">{searchExamples.map(example => <button type="button" key={example} onClick={() => chooseExample(example)}>{example}</button>)}</div>
   </section>;
