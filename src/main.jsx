@@ -179,13 +179,11 @@ function App() {
     <section className="mobile-app">
       <header className="topbar">
         <div className="brand"><span className="brand-mark"><HeartPulse size={17}/></span><span>FamilyHealth</span></div>
-        <div className="top-actions"><button className="icon-button" aria-label="Search"><Search size={20}/></button><button className="bell" onClick={() => setShowNotifications(open => !open)} aria-label="Notifications" aria-expanded={showNotifications}><Bell size={19}/><i/><span className="notification-count">{notifications.filter(notification => notification.unread).length}</span></button><button className="avatar" onClick={() => setTab('Profile')} aria-label="Profile">MP</button></div>
+        <div className="top-actions"><button className="icon-button" aria-label="Search"><Search size={20}/></button><button className="avatar" onClick={() => setTab('Profile')} aria-label="Profile">MP</button></div>
       </header>
 
-      {showNotifications && <NotificationPanel />}
-
       <div className="content">
-        {tab === 'Home' && <HomeScreen activePerson={activePerson} setActivePerson={setActivePerson} items={items} onAdd={() => setShowAdd(true)} />}
+        {tab === 'Home' && <HomeScreen activePerson={activePerson} setActivePerson={setActivePerson} items={items} onAdd={() => setShowAdd(true)} showNotifications={showNotifications} toggleNotifications={() => setShowNotifications(open => !open)} />}
         {tab === 'Records' && <RecordsScreen items={items} onAdd={() => setShowAdd(true)} />}
         {tab === 'Family' && <FamilyScreen activePerson={activePerson} setActivePerson={setActivePerson} />}
         {tab === 'Profile' && <ProfileScreen activePerson={activePerson} onLogout={() => setAuthenticated(false)} />}
@@ -271,7 +269,7 @@ function LegalDialog({ page, close }) {
   </div>;
 }
 
-function HomeScreen({ activePerson, setActivePerson, items, onAdd }) {
+function HomeScreen({ activePerson, setActivePerson, items, onAdd, showNotifications, toggleNotifications }) {
   const personCycle = ['Phalguna Rao BAMMIDI', 'Swetha NAYANI', 'Vinay Kumar DURGAM'];
   const currentIndex = personCycle.indexOf(activePerson);
   const nextPerson = personCycle[(currentIndex + 1) % personCycle.length];
@@ -279,7 +277,8 @@ function HomeScreen({ activePerson, setActivePerson, items, onAdd }) {
   const initials = activePerson.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase();
 
   return <>
-    <div className="hello-row"><div><p className="eyebrow">TUESDAY, SEPTEMBER 9</p><h1>Good morning, {firstName}</h1></div><button className="bell"><Bell size={19}/><i/></button></div>
+    <div className="hello-row"><div><p className="eyebrow">TUESDAY, SEPTEMBER 9</p><h1>Good morning, {firstName}</h1></div><button className="bell" onClick={toggleNotifications} aria-label="Notifications" aria-expanded={showNotifications}><Bell size={19}/><i/><span className="notification-count">{notifications.filter(notification => notification.unread).length}</span></button></div>
+    {showNotifications && <NotificationPanel />}
     <button className="person-picker" onClick={() => setActivePerson(nextPerson)}><span className="person-mini">{initials}</span><span><b>{activePerson}</b><small>Personal health space</small></span><ChevronDown size={18}/></button>
 
     <section className="status-card">
