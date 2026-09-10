@@ -169,7 +169,7 @@ function App() {
         {tab === 'Home' && <HomeScreen activePerson={activePerson} setActivePerson={setActivePerson} items={items} onAdd={() => setShowAdd(true)} />}
         {tab === 'Records' && <RecordsScreen items={items} onAdd={() => setShowAdd(true)} />}
         {tab === 'Family' && <FamilyScreen activePerson={activePerson} setActivePerson={setActivePerson} />}
-        {tab === 'Profile' && <ProfileScreen />}
+        {tab === 'Profile' && <ProfileScreen activePerson={activePerson} />}
       </div>
 
       <nav className="bottom-nav">
@@ -258,7 +258,11 @@ function FamilyScreen({ activePerson, setActivePerson }) {
 
   return <><div className="page-title family-title"><p className="eyebrow">SHARED CARE</p><h1>Family health</h1><span>Care for the people you love.</span></div><div className="family-tip"><Sparkles size={18}/><span>Keep everyone's care history organized in one place.</span></div><div className="people-list">{people.map(([initial,name,tone])=><button onClick={()=>setActivePerson(name)} className={`person-row ${activePerson===name?'person-selected':''}`} key={name}><span className={`family-avatar ${tone}`}>{initial}</span><span><b>{name}</b><small>{name === 'Phalguna Rao BAMMIDI' ? 'Your personal health space' : `${name}'s health records`}</small></span>{activePerson===name?<span className="active-dot">✓</span>:<ChevronRight size={18}/>}</button>)}</div><button className="invite-button"><Plus size={19}/>Add family member</button><p className="family-footnote"><ShieldCheck size={14}/>You control who can view and manage each profile.</p></> }
 
-function ProfileScreen() { return <><div className="profile-hero"><span className="large-avatar">MP</span><h1>Maya Patel</h1><span>maya.patel@email.com</span><button>Edit profile</button></div><div className="settings-list">{[[ShieldCheck,'Privacy & security'],[Bell,'Notifications'],[Users,'Sharing & family access'],[FileText,'Export my records']].map(([Icon,label])=><button key={label}><span><Icon size={20}/>{label}</span><ChevronRight size={18}/></button>)}</div><p className="profile-version">FamilyHealth v1.0 · Your data stays yours</p></> }
+function ProfileScreen({ activePerson }) {
+  const initials = activePerson.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase();
+
+  return <><div className="profile-hero"><span className="large-avatar">{initials}</span><h1>{activePerson}</h1><span>Personal health space</span><button>Edit profile</button></div><div className="settings-list">{[[ShieldCheck,'Privacy & security'],[Bell,'Notifications'],[Users,'Sharing & family access'],[FileText,'Export my records']].map(([Icon,label])=><button key={label}><span><Icon size={20}/>{label}</span><ChevronRight size={18}/></button>)}</div><p className="profile-version">FamilyHealth v1.0 · Your data stays yours</p></>;
+}
 
 function AddSheet({ close, addRecord }) {
   const [recordType, setRecordType] = useState('Scan');
