@@ -13,13 +13,8 @@ import './google.css';
 import './phone.css';
 
 const countryCodes = [
-  ['United States (+1)', '+1'],
   ['India (+91)', '+91'],
-  ['United Kingdom (+44)', '+44'],
-  ['Canada (+1)', '+1'],
-  ['Australia (+61)', '+61'],
   ['Singapore (+65)', '+65'],
-  ['United Arab Emirates (+971)', '+971'],
 ];
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
@@ -198,7 +193,7 @@ function App() {
 function AuthScreen({ onAuthenticated }) {
   const [screen, setScreen] = useState('welcome');
   const [phone, setPhone] = useState('');
-  const [countryCode, setCountryCode] = useState('+1');
+  const [countryCode, setCountryCode] = useState('+91');
   const [code, setCode] = useState('');
   const title = screen === 'signup' ? 'Create your account' : 'Welcome back';
   const submitPhone = (event) => { event.preventDefault(); setScreen('verify'); };
