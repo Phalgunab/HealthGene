@@ -281,7 +281,7 @@ function App() {
       {showSearch && <SearchPanel searchTerm={searchTerm} setSearchTerm={setSearchTerm} submitSearch={() => { setShowSearch(false); setTab('Records'); }} chooseExample={(example) => { setSearchTerm(example); setShowSearch(false); setTab('Records'); }} />}
 
       <div className="content">
-        {tab === 'Home' && (showTimeline ? <TimelinePage items={items} selectedRecord={timelineRecord} onSelectRecord={setTimelineRecord} onBack={() => { setShowTimeline(false); setTimelineRecord(null); }} /> : <HomeScreen activePerson={activePerson} setActivePerson={setActivePerson} familyList={familyList} items={items} onAdd={() => setShowAdd(true)} onViewTimeline={() => setShowTimeline(true)} showNotifications={showNotifications} toggleNotifications={() => setShowNotifications(open => !open)} />)}
+        {tab === 'Home' && (showTimeline ? <TimelinePage items={items} selectedRecord={timelineRecord} onSelectRecord={setTimelineRecord} onBack={() => { setShowTimeline(false); setTimelineRecord(null); }} /> : recordDetail ? <RecordDetailPage record={recordDetail} onBack={() => setRecordDetail(null)} /> : <HomeScreen activePerson={activePerson} setActivePerson={setActivePerson} familyList={familyList} items={items} onAdd={() => setShowAdd(true)} onViewTimeline={() => setShowTimeline(true)} onOpenRecord={setRecordDetail} showNotifications={showNotifications} toggleNotifications={() => setShowNotifications(open => !open)} />)}
         {tab === 'Records' && (recordDetail ? <RecordDetailPage record={recordDetail} onBack={() => setRecordDetail(null)} /> : <RecordsScreen items={items} searchTerm={searchTerm} setSearchTerm={setSearchTerm} onAdd={() => setShowAdd(true)} onOpenRecord={setRecordDetail} />)}
         {tab === 'Family' && (showAddFamily ? <AddFamilyMemberPage onBack={() => setShowAddFamily(false)} onSave={addFamilyMember} /> : editingMember ? <EditFamilyMemberPage member={editingMember} onBack={() => setEditingMember(null)} onSave={(updatedMember) => updateFamilyMember(updatedMember, editingMember.name)} onDelete={() => deleteFamilyMember(editingMember)} /> : <FamilyScreen activePerson={activePerson} setActivePerson={setActivePerson} familyList={familyList} onAddMember={() => setShowAddFamily(true)} onOpenMember={setEditingMember} />)}
         {tab === 'Profile' && (editProfile ? <EditProfilePage details={profileDetails} onBack={() => setEditProfile(false)} onSave={saveProfile} /> : settingsPage ? <SettingsPage page={settingsPage} activePerson={activePerson} items={items} onBack={() => setSettingsPage(null)} /> : <ProfileScreen activePerson={activePerson} profileDetails={profileDetails} onLogout={() => signOut(auth)} openSettings={setSettingsPage} openEditProfile={() => setEditProfile(true)} />)}
@@ -430,7 +430,7 @@ function LegalDialog({ page, close }) {
   </div>;
 }
 
-function HomeScreen({ activePerson, setActivePerson, familyList, items, onAdd, onViewTimeline, showNotifications, toggleNotifications }) {
+function HomeScreen({ activePerson, setActivePerson, familyList, items, onAdd, onViewTimeline, onOpenRecord, showNotifications, toggleNotifications }) {
   const [personMenuOpen, setPersonMenuOpen] = useState(false);
   const firstName = (activePerson || 'there').split(' ')[0];
   const initials = activePerson ? activePerson.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase() : '?';
@@ -459,7 +459,7 @@ function HomeScreen({ activePerson, setActivePerson, familyList, items, onAdd, o
     </div>
 
     <div className="section-heading recent"><div><p className="eyebrow">TIMELINE</p><h2>Recent records</h2></div><button className="link-button" onClick={onViewTimeline}>View history</button></div>
-    <div className="timeline">{items.slice(0,3).map((r, i) => <RecordRow record={r} key={i}/>)}</div>
+    <div className="timeline">{items.slice(0,3).map((r, i) => <RecordRow record={r} key={i} onOpen={() => onOpenRecord(r)}/>)}</div>
     <button className="add-record" onClick={onAdd}><Plus size={21}/><span>Add a health record</span></button>
     <p className="privacy-note"><LockKeyhole size={14}/>Your records are private and encrypted</p>
   </>;
