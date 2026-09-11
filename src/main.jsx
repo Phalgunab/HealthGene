@@ -170,6 +170,7 @@ function App() {
     height: '',
     weight: '',
     emergencyContact: '',
+    isPrimaryHolder: true,
   });
   const [items, setItems] = useState([]);
   const activeInitials = activePerson.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase();
@@ -194,11 +195,11 @@ function App() {
 
         if (profileSnapshot.exists()) {
           const profile = profileSnapshot.data();
-          setProfileDetails(current => ({ ...current, ...profile }));
+          setProfileDetails(current => ({ ...current, ...profile, isPrimaryHolder: true }));
           if (profile.fullName) setActivePerson(profile.fullName);
         } else {
           if (currentUser.displayName) {
-            setProfileDetails(current => ({ ...current, fullName: currentUser.displayName }));
+            setProfileDetails(current => ({ ...current, fullName: currentUser.displayName, isPrimaryHolder: true }));
             setActivePerson(currentUser.displayName);
           }
           // First sign-in after registration: send the user straight to their profile details form.
@@ -208,7 +209,7 @@ function App() {
         setFamilyList(familySnapshot.docs.map(snapshot => ({ id: snapshot.id, ...snapshot.data() })));
         setItems(recordsSnapshot.docs.map(snapshot => hydrateRecord(snapshot.id, snapshot.data())));
 
-        if (!profileSnapshot.exists()) await setDoc(doc(userRef, 'profile', 'details'), { fullName: currentUser.displayName || '' }, { merge: true });
+        if (!profileSnapshot.exists()) await setDoc(doc(userRef, 'profile', 'details'), { fullName: currentUser.displayName || '', isPrimaryHolder: true }, { merge: true });
       } catch (error) {
         console.error('Could not load Firestore data', error);
       }
@@ -240,17 +241,19 @@ function App() {
   };
 
   const saveProfile = async (details) => {
-    setProfileDetails(details);
+    const profileWithPrimary = { ...details, isPrimaryHolder: true };
+    setProfileDetails(profileWithPrimary);
     setActivePerson(details.fullName);
     setEditProfile(false);
-    if (currentUser) await setDoc(doc(db, 'users', currentUser.uid, 'profile', 'details'), details, { merge: true });
+    if (currentUser) await setDoc(doc(db, 'users', currentUser.uid, 'profile', 'details'), profileWithPrimary, { merge: true });
   };
 
   const addFamilyMember = async (member) => {
-    setFamilyList(current => [...current, member]);
+    const familyMember = { ...member, isPrimaryHolder: false };
+    setFamilyList(current => [...current, familyMember]);
     setActivePerson(member.name);
     setShowAddFamily(false);
-    if (currentUser) await setDoc(doc(collection(db, 'users', currentUser.uid, 'familyMembers')), member);
+    if (currentUser) await setDoc(doc(collection(db, 'users', currentUser.uid, 'familyMembers')), familyMember);
   };
 
   const updateFamilyMember = async (updatedMember, originalName) => {
@@ -435,6 +438,7 @@ function HomeScreen({ activePerson, setActivePerson, familyList, items, onAdd, o
   const firstName = (activePerson || 'there').split(' ')[0];
   const initials = activePerson ? activePerson.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase() : '?';
   const activeMember = familyList.find(member => member.name === activePerson);
+  const isPrimaryHolderActive = !activeMember; // Primary holder is active if not in family list
   const followUp = activeMember?.followUpTitle
     ? [activeMember.followUpTitle, activeMember.followUpDetail || '']
     : ['No follow-up scheduled', 'Add a care plan when needed'];
@@ -448,7 +452,7 @@ function HomeScreen({ activePerson, setActivePerson, familyList, items, onAdd, o
     <div className="hello-row"><div><p className="eyebrow">{dateHeader}</p><h1>Good morning, {firstName}</h1></div><button className="bell" onClick={toggleNotifications} aria-label="Notifications" aria-expanded={showNotifications}><Bell size={19}/><i/><span className="notification-count">{notifications.filter(notification => notification.unread).length}</span></button></div>
     {showNotifications && <NotificationPanel />}
     <div className={`person-select ${personMenuOpen ? 'person-open' : ''}`}>
-      <button className="person-picker" onClick={() => setPersonMenuOpen(open => !open)} aria-expanded={personMenuOpen} disabled={!familyList.length}><span className="person-mini">{initials}</span><span><b>{activePerson || 'No profile yet'}</b><small>Personal health space</small></span><ChevronDown size={18}/></button>
+      <button className="person-picker" onClick={() => setPersonMenuOpen(open => !open)} aria-expanded={personMenuOpen} disabled={!familyList.length}><span className="person-mini">{initials}</span><span><b>{activePerson || 'No profile yet'}</b><small>{isPrimaryHolderActive ? 'Personal health space' : 'Family member'}</small></span><ChevronDown size={18}/></button>
       {personMenuOpen && <div className="person-menu" role="listbox">{familyList.map(member => { const memberInitials = member.name.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase(); return <button className={activePerson === member.name ? 'person-option selected' : 'person-option'} type="button" role="option" aria-selected={activePerson === member.name} key={member.id || member.name} onClick={() => { setActivePerson(member.name); setPersonMenuOpen(false); }}><span className="person-mini">{memberInitials}</span><span><b>{member.name}</b><small>{member.relationship || 'Family member'}</small></span>{activePerson === member.name && <Check size={16}/>}</button>; })}</div>}
     </div>
 
@@ -509,6 +513,7 @@ function RecordsScreen({ items, searchTerm, setSearchTerm, onAdd, onOpenRecord }
 
 function FamilyScreen({ activePerson, setActivePerson, familyList, onAddMember, onOpenMember }) {
   const people = familyList.map(({ name, initial, tone, relationship }) => [initial, name, tone, relationship]);
+  const isPrimaryHolderActive = !familyList.find(m => m.name === activePerson);
 
   return <><div className="page-title family-title"><p className="eyebrow">SHARED CARE</p><h1>Family health</h1><span>Care for the people you love.</span></div><div className="family-tip"><Sparkles size={18}/><span>Keep everyone's care history organized in one place.</span></div>{people.length ? <div className="people-list">{people.map(([initial,name,tone,relationship])=><button onClick={()=>{ setActivePerson(name); onOpenMember(familyList.find(member => member.name === name)); }} className={`person-row ${activePerson===name?'person-selected':''}`} key={name}><span className={`family-avatar ${tone}`}>{initial}</span><span><b>{name}</b><small>{relationship || `${name}'s health records`}</small></span><ChevronRight size={18}/></button>)}</div> : <div className="empty-search">No family members added yet.</div>}<button className="invite-button" onClick={onAddMember}><Plus size={19}/>Add family member</button><p className="family-footnote"><ShieldCheck size={14}/>You control who can view and manage each profile.</p></> }
 
