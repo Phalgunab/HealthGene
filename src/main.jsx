@@ -54,6 +54,17 @@ const formatRecordDate = (dateString) => {
   return dateString;
 };
 
+const getTimeGreeting = () => {
+  const hour = new Date().getHours();
+  if (hour >= 5 && hour < 12) {
+    return 'Good morning';
+  } else if (hour >= 12 && hour < 17) {
+    return 'Good afternoon';
+  } else {
+    return 'Good evening';
+  }
+};
+
 const recordKindConfig = {
   Scan: { title: 'Medical scan', source: 'Document scanned', tone: 'blue', icon: Camera },
   Upload: { title: 'Uploaded report', source: 'File uploaded', tone: 'lavender', icon: Upload },
@@ -630,7 +641,7 @@ function HomeScreen({ activePerson, setActivePerson, primaryMemberName, familyLi
   const dateHeader = `${dayName}, ${monthDate}`;
 
   return <>
-    <div className="hello-row"><div><p className="eyebrow">{dateHeader}</p><h1>Good morning, {firstName}</h1></div><button className="bell" onClick={toggleNotifications} aria-label="Notifications" aria-expanded={showNotifications}><Bell size={19}/><i/><span className="notification-count">{notifications?.filter(notification => notification.unread)?.length || 0}</span></button></div>
+    <div className="hello-row"><div><p className="eyebrow">{dateHeader}</p><h1>{getTimeGreeting()}, {firstName}</h1></div><button className="bell" onClick={toggleNotifications} aria-label="Notifications" aria-expanded={showNotifications}><Bell size={19}/><i/><span className="notification-count">{notifications?.filter(notification => notification.unread)?.length || 0}</span></button></div>
     {showNotifications && <NotificationPanel notifications={notifications || []} onMarkAsRead={onMarkNotificationAsRead} showRead={showReadNotifications} setShowRead={setShowReadNotifications} unreadPage={unreadNotificationPage} setUnreadPage={setUnreadNotificationPage} readPage={readNotificationPage} setReadPage={setReadNotificationPage} />}
     <div className={`person-select ${personMenuOpen ? 'person-open' : ''}`}>
       <button className="person-picker" onClick={() => setPersonMenuOpen(open => !open)} aria-expanded={personMenuOpen}><span className="person-mini">{initials}</span><span><b>{activePerson || 'No profile yet'}</b><small>{isPrimaryHolderActive ? 'Personal health space' : 'Family member'}</small></span><ChevronDown size={18}/></button>
