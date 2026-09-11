@@ -449,8 +449,8 @@ function App() {
       {showSearch && <SearchPanel searchTerm={searchTerm} setSearchTerm={setSearchTerm} submitSearch={() => { setShowSearch(false); setTab('Records'); }} chooseExample={(example) => { setSearchTerm(example); setShowSearch(false); setTab('Records'); }} />}
 
       <div className="content">
-        {tab === 'Home' && (showTimeline ? (editingRecord ? <EditRecordPage record={editingRecord} onBack={() => setEditingRecord(null)} onSave={(updates) => updateRecord(editingRecord.id, updates)} primaryMemberName={profileDetails.fullName} familyList={familyList} /> : <TimelinePage items={items} selectedRecord={timelineRecord} onSelectRecord={setTimelineRecord} onEdit={() => setEditingRecord(timelineRecord)} onBack={() => { setShowTimeline(false); setTimelineRecord(null); }} />) : recordDetail ? (editingRecord ? <EditRecordPage record={editingRecord} onBack={() => setEditingRecord(null)} onSave={(updates) => updateRecord(editingRecord.id, updates)} primaryMemberName={profileDetails.fullName} familyList={familyList} /> : <RecordDetailPage record={recordDetail} onEdit={() => setEditingRecord(recordDetail)} onBack={() => setRecordDetail(null)} />) : <HomeScreen activePerson={activePerson} setActivePerson={setActivePerson} primaryMemberName={profileDetails.fullName} familyList={familyList} items={items} notifications={notifications} onMarkNotificationAsRead={markNotificationAsRead} onAdd={() => setShowAdd(true)} onViewTimeline={() => setShowTimeline(true)} onOpenRecord={setRecordDetail} showNotifications={showNotifications} showReadNotifications={showReadNotifications} setShowReadNotifications={setShowReadNotifications} unreadNotificationPage={unreadNotificationPage} setUnreadNotificationPage={setUnreadNotificationPage} readNotificationPage={readNotificationPage} setReadNotificationPage={setReadNotificationPage} toggleNotifications={() => setShowNotifications(open => !open)} />)}
-        {tab === 'Records' && (recordDetail ? (editingRecord ? <EditRecordPage record={editingRecord} onBack={() => setEditingRecord(null)} onSave={(updates) => updateRecord(editingRecord.id, updates)} primaryMemberName={profileDetails.fullName} familyList={familyList} /> : <RecordDetailPage record={recordDetail} onEdit={() => setEditingRecord(recordDetail)} onBack={() => setRecordDetail(null)} />) : <RecordsScreen items={items} searchTerm={searchTerm} setSearchTerm={setSearchTerm} onAdd={() => setShowAdd(true)} onOpenRecord={setRecordDetail} />)}
+        {tab === 'Home' && (showTimeline ? (editingRecord ? <EditRecordPage record={editingRecord} onBack={() => setEditingRecord(null)} onSave={(updates) => updateRecord(editingRecord.id, updates)} primaryMemberName={profileDetails.fullName} familyList={familyList} /> : <TimelinePage items={items} selectedRecord={timelineRecord} onSelectRecord={setTimelineRecord} onEdit={() => setEditingRecord(timelineRecord)} onBack={() => { setShowTimeline(false); setTimelineRecord(null); }} activePerson={activePerson} primaryMemberName={profileDetails.fullName} />) : recordDetail ? (editingRecord ? <EditRecordPage record={editingRecord} onBack={() => setEditingRecord(null)} onSave={(updates) => updateRecord(editingRecord.id, updates)} primaryMemberName={profileDetails.fullName} familyList={familyList} /> : <RecordDetailPage record={recordDetail} onEdit={() => setEditingRecord(recordDetail)} onBack={() => setRecordDetail(null)} />) : <HomeScreen activePerson={activePerson} setActivePerson={setActivePerson} primaryMemberName={profileDetails.fullName} familyList={familyList} items={items} notifications={notifications} onMarkNotificationAsRead={markNotificationAsRead} onAdd={() => setShowAdd(true)} onViewTimeline={() => setShowTimeline(true)} onOpenRecord={setRecordDetail} showNotifications={showNotifications} showReadNotifications={showReadNotifications} setShowReadNotifications={setShowReadNotifications} unreadNotificationPage={unreadNotificationPage} setUnreadNotificationPage={setUnreadNotificationPage} readNotificationPage={readNotificationPage} setReadNotificationPage={setReadNotificationPage} toggleNotifications={() => setShowNotifications(open => !open)} />)}
+        {tab === 'Records' && (recordDetail ? (editingRecord ? <EditRecordPage record={editingRecord} onBack={() => setEditingRecord(null)} onSave={(updates) => updateRecord(editingRecord.id, updates)} primaryMemberName={profileDetails.fullName} familyList={familyList} /> : <RecordDetailPage record={recordDetail} onEdit={() => setEditingRecord(recordDetail)} onBack={() => setRecordDetail(null)} />) : <RecordsScreen items={items} searchTerm={searchTerm} setSearchTerm={setSearchTerm} onAdd={() => setShowAdd(true)} onOpenRecord={setRecordDetail} activePerson={activePerson} primaryMemberName={profileDetails.fullName} />)}
         {tab === 'Family' && (showAddFamily ? <AddFamilyMemberPage onBack={() => setShowAddFamily(false)} onSave={addFamilyMember} /> : editingMember ? <EditFamilyMemberPage member={editingMember} onBack={() => setEditingMember(null)} onSave={(updatedMember) => updateFamilyMember(updatedMember, editingMember.name)} onDelete={() => deleteFamilyMember(editingMember)} /> : <FamilyScreen activePerson={activePerson} setActivePerson={setActivePerson} primaryMemberName={profileDetails.fullName} familyList={familyList} onAddMember={() => setShowAddFamily(true)} onOpenMember={setEditingMember} />)}
         {tab === 'Profile' && (editProfile ? <EditProfilePage details={profileDetails} onBack={() => setEditProfile(false)} onSave={saveProfile} /> : settingsPage ? <SettingsPage page={settingsPage} activePerson={activePerson} familyList={familyList} items={items} onBack={() => setSettingsPage(null)} /> : <ProfileScreen activePerson={activePerson} profileDetails={profileDetails} onLogout={() => signOut(auth)} openSettings={setSettingsPage} openEditProfile={() => setEditProfile(true)} />)}
       </div>
@@ -631,7 +631,8 @@ function LegalDialog({ page, close }) {
 
 function HomeScreen({ activePerson, setActivePerson, primaryMemberName, familyList, items, notifications, onMarkNotificationAsRead, onAdd, onViewTimeline, onOpenRecord, showNotifications, showReadNotifications, setShowReadNotifications, unreadNotificationPage, setUnreadNotificationPage, readNotificationPage, setReadNotificationPage, toggleNotifications }) {
   const [personMenuOpen, setPersonMenuOpen] = useState(false);
-  const firstName = (activePerson || 'there').split(' ')[0];
+  // Always show primary account holder name in greeting, not the selected person
+  const primaryFirstName = (primaryMemberName || 'there').split(' ')[0];
   const initials = activePerson ? activePerson.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase() : '?';
   const activeMember = familyList.find(member => member.name === activePerson);
   const isPrimaryHolderActive = !activeMember; // Primary holder is active if not in family list
@@ -639,13 +640,20 @@ function HomeScreen({ activePerson, setActivePerson, primaryMemberName, familyLi
     ? [activeMember.followUpTitle, activeMember.followUpDetail || '']
     : ['No follow-up scheduled', 'Add a care plan when needed'];
   
+  // Filter items to show only records belonging to the active person
+  const filteredItems = items.filter(item => {
+    // If no recordBelongsTo field, default to primary account holder
+    const itemBelongsTo = item.recordBelongsTo || primaryMemberName;
+    return itemBelongsTo === activePerson;
+  });
+  
   const today = new Date();
   const dayName = today.toLocaleString('en-US', { weekday: 'long' }).toUpperCase();
   const monthDate = today.toLocaleString('en-US', { month: 'long', day: 'numeric' }).toUpperCase();
   const dateHeader = `${dayName}, ${monthDate}`;
 
   return <>
-    <div className="hello-row"><div><p className="eyebrow">{dateHeader}</p><h1>{getTimeGreeting()}, {firstName}</h1></div><button className="bell" onClick={toggleNotifications} aria-label="Notifications" aria-expanded={showNotifications}><Bell size={19}/><i/><span className="notification-count">{notifications?.filter(notification => notification.unread)?.length || 0}</span></button></div>
+    <div className="hello-row"><div><p className="eyebrow">{dateHeader}</p><h1>{getTimeGreeting()}, {primaryFirstName}</h1></div><button className="bell" onClick={toggleNotifications} aria-label="Notifications" aria-expanded={showNotifications}><Bell size={19}/><i/><span className="notification-count">{notifications?.filter(notification => notification.unread)?.length || 0}</span></button></div>
     {showNotifications && <NotificationPanel notifications={notifications || []} onMarkAsRead={onMarkNotificationAsRead} showRead={showReadNotifications} setShowRead={setShowReadNotifications} unreadPage={unreadNotificationPage} setUnreadPage={setUnreadNotificationPage} readPage={readNotificationPage} setReadPage={setReadNotificationPage} />}
     <div className={`person-select ${personMenuOpen ? 'person-open' : ''}`}>
       <button className="person-picker" onClick={() => setPersonMenuOpen(open => !open)} aria-expanded={personMenuOpen}><span className="person-mini">{initials}</span><span><b>{activePerson || 'No profile yet'}</b><small>{isPrimaryHolderActive ? 'Personal health space' : 'Family member'}</small></span><ChevronDown size={18}/></button>
@@ -654,8 +662,8 @@ function HomeScreen({ activePerson, setActivePerson, primaryMemberName, familyLi
 
 
 
-    <div className="section-heading recent"><div><p className="eyebrow">TIMELINE</p><h2>Recent records</h2></div>{items.length > 0 && <button className="link-button" onClick={onViewTimeline}>View history</button>}</div>
-    {items.length > 0 ? <div className="timeline">{items.slice(0,3).map((r, i) => <RecordRow record={r} key={i} onOpen={() => onOpenRecord(r)}/>)}</div> : <div className="empty-search">Start adding health records to see them here.</div>}
+    <div className="section-heading recent"><div><p className="eyebrow">TIMELINE</p><h2>Recent records</h2></div>{filteredItems.length > 0 && <button className="link-button" onClick={onViewTimeline}>View history</button>}</div>
+    {filteredItems.length > 0 ? <div className="timeline">{filteredItems.slice(0,3).map((r, i) => <RecordRow record={r} key={i} onOpen={() => onOpenRecord(r)}/>)}</div> : <div className="empty-search">Start adding health records to see them here.</div>}
     <button className="add-record" onClick={onAdd}><Plus size={21}/><span>Add a health record</span></button>
     <p className="privacy-note"><LockKeyhole size={14}/>Your records are private and encrypted</p>
   </>;
@@ -864,10 +872,18 @@ function EditRecordPage({ record, onBack, onSave, primaryMemberName, familyList 
   </form></div>;
 }
 
-function TimelinePage({ items, selectedRecord, onSelectRecord, onEdit, onBack }) {
+function TimelinePage({ items, selectedRecord, onSelectRecord, onEdit, onBack, activePerson, primaryMemberName }) {
   const [selectedMonth, setSelectedMonth] = useState('All');
-  const months = [...new Set(items.map(record => timelineDate(record).toLocaleString('en-US', { month: 'short' })))];
-  const visibleItems = items.filter(record => selectedMonth === 'All' || timelineDate(record).toLocaleString('en-US', { month: 'short' }) === selectedMonth).sort((a, b) => timelineDate(b) - timelineDate(a));
+  
+  // Filter items to show only records belonging to the active person
+  const filteredByPerson = items.filter(record => {
+    // If no recordBelongsTo field, default to primary account holder
+    const itemBelongsTo = record.recordBelongsTo || primaryMemberName;
+    return itemBelongsTo === activePerson;
+  });
+  
+  const months = [...new Set(filteredByPerson.map(record => timelineDate(record).toLocaleString('en-US', { month: 'short' })))];
+  const visibleItems = filteredByPerson.filter(record => selectedMonth === 'All' || timelineDate(record).toLocaleString('en-US', { month: 'short' }) === selectedMonth).sort((a, b) => timelineDate(b) - timelineDate(a));
 
   if (selectedRecord) return <RecordDetailPage record={selectedRecord} onEdit={onEdit} onBack={() => onSelectRecord(null)} />;
 
@@ -930,9 +946,16 @@ function DetailField({ label, value }) { return <div className="detail-field"><p
 
 function RecordRow({ record, onOpen }) { const Icon = record.icon; return <button className="record-row" onClick={onOpen}><div className={`record-icon ${record.tone}`}><Icon size={19}/></div><div className="record-copy"><b>{record.title}</b><span>{record.source}</span></div><div className="record-date">{formatRecordDate(record.date)}<ChevronRight size={16}/></div></button> }
 
-function RecordsScreen({ items, searchTerm, setSearchTerm, onAdd, onOpenRecord }) {
+function RecordsScreen({ items, searchTerm, setSearchTerm, onAdd, onOpenRecord, activePerson, primaryMemberName }) {
   const [recordFilter, setRecordFilter] = useState('all');
-  const allItems = items;
+  
+  // Filter items to show only records belonging to the active person
+  const personFilteredItems = items.filter(record => {
+    const itemBelongsTo = record.recordBelongsTo || primaryMemberName;
+    return itemBelongsTo === activePerson;
+  });
+  
+  const allItems = personFilteredItems;
   const normalizedSearch = searchTerm.toLowerCase().trim();
   const filteredItems = allItems.filter(record => {
     const matchesType = recordFilter === 'all' || record.kind === recordFilter;
