@@ -426,9 +426,7 @@ function LegalDialog({ page, close }) {
 }
 
 function HomeScreen({ activePerson, setActivePerson, familyList, items, onAdd, onViewTimeline, showNotifications, toggleNotifications }) {
-  const personCycle = familyList.map(member => member.name);
-  const currentIndex = personCycle.indexOf(activePerson);
-  const nextPerson = personCycle.length ? personCycle[(currentIndex + 1) % personCycle.length] : activePerson;
+  const [personMenuOpen, setPersonMenuOpen] = useState(false);
   const firstName = (activePerson || 'there').split(' ')[0];
   const initials = activePerson ? activePerson.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase() : '?';
   const activeMember = familyList.find(member => member.name === activePerson);
@@ -439,7 +437,10 @@ function HomeScreen({ activePerson, setActivePerson, familyList, items, onAdd, o
   return <>
     <div className="hello-row"><div><p className="eyebrow">TUESDAY, SEPTEMBER 9</p><h1>Good morning, {firstName}</h1></div><button className="bell" onClick={toggleNotifications} aria-label="Notifications" aria-expanded={showNotifications}><Bell size={19}/><i/><span className="notification-count">{notifications.filter(notification => notification.unread).length}</span></button></div>
     {showNotifications && <NotificationPanel />}
-    <button className="person-picker" onClick={() => setActivePerson(nextPerson)}><span className="person-mini">{initials}</span><span><b>{activePerson}</b><small>Personal health space</small></span><ChevronDown size={18}/></button>
+    <div className={`person-select ${personMenuOpen ? 'person-open' : ''}`}>
+      <button className="person-picker" onClick={() => setPersonMenuOpen(open => !open)} aria-expanded={personMenuOpen} disabled={!familyList.length}><span className="person-mini">{initials}</span><span><b>{activePerson || 'No profile yet'}</b><small>Personal health space</small></span><ChevronDown size={18}/></button>
+      {personMenuOpen && <div className="person-menu" role="listbox">{familyList.map(member => { const memberInitials = member.name.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase(); return <button className={activePerson === member.name ? 'person-option selected' : 'person-option'} type="button" role="option" aria-selected={activePerson === member.name} key={member.id || member.name} onClick={() => { setActivePerson(member.name); setPersonMenuOpen(false); }}><span className="person-mini">{memberInitials}</span><span><b>{member.name}</b><small>{member.relationship || 'Family member'}</small></span>{activePerson === member.name && <Check size={16}/>}</button>; })}</div>}
+    </div>
 
     <section className="status-card">
       <div className="status-detail"><div className="status-detail-icon medication"><ShieldCheck size={17}/></div><div><p>RUNNING MEDICATION</p><b>No running medication</b><span>Nothing active on this profile</span></div></div>
