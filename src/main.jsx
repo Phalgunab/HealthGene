@@ -22,11 +22,6 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.mi
 const familyMembers = [];
 const records = [];
 
-const notifications = [
-  { id: 1, title: 'New lab result added', detail: 'Your annual blood work is ready to review.', time: '10 min ago', unread: true },
-  { id: 2, title: 'Appointment reminder', detail: 'Dental cleaning scheduled for October 14.', time: '2 hours ago', unread: true },
-  { id: 3, title: 'Record saved privately', detail: 'Knee MRI scan was added to Swetha NAYANI’s timeline.', time: 'Yesterday', unread: false },
-];
 
 const searchExamples = ['Fever in last month', 'Apollo visit last month', 'Lab reports for Swetha'];
 
@@ -174,6 +169,7 @@ function App() {
     isPrimaryHolder: true,
   });
   const [items, setItems] = useState([]);
+  const [notifications, setNotifications] = useState([]);
   const activeInitials = activePerson.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase();
 
   useEffect(() => onAuthStateChanged(auth, (user) => {
@@ -181,6 +177,60 @@ function App() {
     setAuthenticated(Boolean(user));
     setAuthReady(true);
   }), []);
+
+  const getTimeAgo = (date) => {
+    if (!date) return 'just now';
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return 'just now';
+    if (diffMins < 60) return `${diffMins} min ago`;
+    if (diffHours < 24) return `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays} days ago`;
+    return date.toLocaleDateString();
+  };
+
+  const loadNotifications = async () => {
+    try {
+      const notificationsSnapshot = await getDocs(collection(db, 'users', currentUser.uid, 'notifications'));
+      const loaded = notificationsSnapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          time: getTimeAgo(data.createdAt?.toDate?.() || new Date(data.createdAt)),
+        };
+      }).sort((a, b) => (b.createdAt?.toDate?.() || new Date(b.createdAt)) - (a.createdAt?.toDate?.() || new Date(a.createdAt)));
+      setNotifications(loaded);
+    } catch (error) {
+      console.error('Could not load notifications', error);
+    }
+  };
+
+  const addNotification = async (title, detail) => {
+    if (!currentUser) return;
+    try {
+      const notification = {
+        title,
+        detail,
+        unread: true,
+        createdAt: new Date(),
+      };
+      const docRef = await addDoc(collection(db, 'users', currentUser.uid, 'notifications'), notification);
+      const newNotif = {
+        id: docRef.id,
+        ...notification,
+        time: getTimeAgo(notification.createdAt),
+      };
+      setNotifications(current => [newNotif, ...current]);
+    } catch (error) {
+      console.error('Could not add notification', error);
+    }
+  };
 
   useEffect(() => {
     if (!currentUser) return undefined;
@@ -209,8 +259,14 @@ function App() {
         }
         setFamilyList(familySnapshot.docs.map(snapshot => ({ id: snapshot.id, ...snapshot.data() })));
         setItems(recordsSnapshot.docs.map(snapshot => hydrateRecord(snapshot.id, snapshot.data())));
-
-        if (!profileSnapshot.exists()) await setDoc(doc(userRef, 'profile', 'details'), { fullName: currentUser.displayName || '', isPrimaryHolder: true }, { merge: true });
+        
+        const isNewUser = !profileSnapshot.exists();
+        if (isNewUser) {
+          await setDoc(doc(userRef, 'profile', 'details'), { fullName: currentUser.displayName || '', isPrimaryHolder: true }, { merge: true });
+          await addNotification('Welcome to HealthGene', 'Your health profile is now active. Start adding your health records to get organized.');
+        }
+        
+        await loadNotifications();
       } catch (error) {
         console.error('Could not load Firestore data', error);
       }
@@ -235,7 +291,10 @@ function App() {
     };
 
     setItems([record, ...items]);
-    if (currentUser) addDoc(collection(db, 'users', currentUser.uid, 'records'), serializeRecord(record)).catch(error => console.error('Could not save record', error));
+    if (currentUser) {
+      addDoc(collection(db, 'users', currentUser.uid, 'records'), serializeRecord(record)).catch(error => console.error('Could not save record', error));
+      addNotification('New health record added', `${record.title} has been saved to your timeline.`);
+    }
     setShowAdd(false);
     setShowNotice(true);
     setTimeout(() => setShowNotice(false), 2800);
@@ -263,7 +322,10 @@ function App() {
     setFamilyList(current => [...current, familyMember]);
     setActivePerson(member.name);
     setShowAddFamily(false);
-    if (currentUser) await setDoc(doc(collection(db, 'users', currentUser.uid, 'familyMembers')), familyMember);
+    if (currentUser) {
+      await setDoc(doc(collection(db, 'users', currentUser.uid, 'familyMembers')), familyMember);
+      await addNotification('Family member added', `${member.name} has been added to your family health space.`);
+    }
   };
 
   const updateFamilyMember = async (updatedMember, originalName) => {
@@ -406,10 +468,10 @@ function AuthScreen() {
 
 function AuthBrand({ compact = false }) { return <div className={`auth-brand ${compact ? 'compact' : ''}`}><div className="brand"><span className="brand-mark"><HeartPulse size={17}/></span><span>MyFamilyHealth</span></div>{!compact && <span>MyFamilyHealth v1.0</span>}</div> }
 
-function NotificationPanel() {
+function NotificationPanel({ notifications }) {
   return <section className="notification-panel" aria-label="Notifications">
     <div className="notification-heading"><div><p className="eyebrow">YOUR UPDATES</p><h2>Notifications</h2></div><span>{notifications.filter(notification => notification.unread).length} unread</span></div>
-    <div className="notification-list">{notifications.map(notification => <article className={`notification-item ${notification.unread ? 'notification-unread' : ''}`} key={notification.id}><span className="notification-icon"><Bell size={15}/></span><div><h3>{notification.title}</h3><p>{notification.detail}</p><small>{notification.time}</small></div>{notification.unread && <i aria-label="Unread"/>}</article>)}</div>
+    <div className="notification-list">{notifications.length > 0 ? notifications.map(notification => <article className={`notification-item ${notification.unread ? 'notification-unread' : ''}`} key={notification.id}><span className="notification-icon"><Bell size={15}/></span><div><h3>{notification.title}</h3><p>{notification.detail}</p><small>{notification.time}</small></div>{notification.unread && <i aria-label="Unread"/>}</article>) : <div style={{ padding: '20px', textAlign: 'center', color: '#999' }}>No notifications yet</div>}</div>
   </section>;
 }
 
@@ -460,7 +522,7 @@ function HomeScreen({ activePerson, setActivePerson, primaryMemberName, familyLi
 
   return <>
     <div className="hello-row"><div><p className="eyebrow">{dateHeader}</p><h1>Good morning, {firstName}</h1></div><button className="bell" onClick={toggleNotifications} aria-label="Notifications" aria-expanded={showNotifications}><Bell size={19}/><i/><span className="notification-count">{notifications.filter(notification => notification.unread).length}</span></button></div>
-    {showNotifications && <NotificationPanel />}
+    {showNotifications && <NotificationPanel notifications={notifications} />}
     <div className={`person-select ${personMenuOpen ? 'person-open' : ''}`}>
       <button className="person-picker" onClick={() => setPersonMenuOpen(open => !open)} aria-expanded={personMenuOpen}><span className="person-mini">{initials}</span><span><b>{activePerson || 'No profile yet'}</b><small>{isPrimaryHolderActive ? 'Personal health space' : 'Family member'}</small></span><ChevronDown size={18}/></button>
       {personMenuOpen && <div className="person-menu" role="listbox">{primaryMemberName && <button className={activePerson === primaryMemberName ? 'person-option selected' : 'person-option'} type="button" role="option" aria-selected={activePerson === primaryMemberName} key={`primary-${primaryMemberName}`} onClick={() => { setActivePerson(primaryMemberName); setPersonMenuOpen(false); }}><span className="person-mini">{primaryMemberName.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase()}</span><span><b>{primaryMemberName}</b><small>Personal health space</small></span>{activePerson === primaryMemberName && <Check size={16}/>}</button>}{familyList.map(member => { const memberInitials = member.name.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase(); return <button className={activePerson === member.name ? 'person-option selected' : 'person-option'} type="button" role="option" aria-selected={activePerson === member.name} key={member.id || member.name} onClick={() => { setActivePerson(member.name); setPersonMenuOpen(false); }}><span className="person-mini">{memberInitials}</span><span><b>{member.name}</b><small>{member.relationship || 'Family member'}</small></span>{activePerson === member.name && <Check size={16}/>}</button>; })}</div>}
