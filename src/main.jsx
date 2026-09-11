@@ -438,9 +438,14 @@ function HomeScreen({ activePerson, setActivePerson, familyList, items, onAdd, o
   const followUp = activeMember?.followUpTitle
     ? [activeMember.followUpTitle, activeMember.followUpDetail || '']
     : ['No follow-up scheduled', 'Add a care plan when needed'];
+  
+  const today = new Date();
+  const dayName = today.toLocaleString('en-US', { weekday: 'long' }).toUpperCase();
+  const monthDate = today.toLocaleString('en-US', { month: 'long', day: 'numeric' }).toUpperCase();
+  const dateHeader = `${dayName}, ${monthDate}`;
 
   return <>
-    <div className="hello-row"><div><p className="eyebrow">TUESDAY, SEPTEMBER 9</p><h1>Good morning, {firstName}</h1></div><button className="bell" onClick={toggleNotifications} aria-label="Notifications" aria-expanded={showNotifications}><Bell size={19}/><i/><span className="notification-count">{notifications.filter(notification => notification.unread).length}</span></button></div>
+    <div className="hello-row"><div><p className="eyebrow">{dateHeader}</p><h1>Good morning, {firstName}</h1></div><button className="bell" onClick={toggleNotifications} aria-label="Notifications" aria-expanded={showNotifications}><Bell size={19}/><i/><span className="notification-count">{notifications.filter(notification => notification.unread).length}</span></button></div>
     {showNotifications && <NotificationPanel />}
     <div className={`person-select ${personMenuOpen ? 'person-open' : ''}`}>
       <button className="person-picker" onClick={() => setPersonMenuOpen(open => !open)} aria-expanded={personMenuOpen} disabled={!familyList.length}><span className="person-mini">{initials}</span><span><b>{activePerson || 'No profile yet'}</b><small>Personal health space</small></span><ChevronDown size={18}/></button>
@@ -455,8 +460,8 @@ function HomeScreen({ activePerson, setActivePerson, familyList, items, onAdd, o
     {items.length > 0 && <>
       <div className="section-heading"><div><p className="eyebrow">AT A GLANCE</p><h2>Your health snapshot</h2></div><button className="link-button" onClick={onViewTimeline}>See all</button></div>
       <div className="snapshot-grid">
-        <div className="snapshot-card"><div className="metric-icon purple"><Activity size={19}/></div><span>Latest checkup</span><b>Blood work</b><small>Today</small></div>
-        <div className="snapshot-card"><div className="metric-icon coral"><CalendarDays size={19}/></div><span>Next reminder</span><b>Dental cleaning</b><small>Oct 14</small></div>
+        <div className="snapshot-card"><div className="metric-icon purple"><Activity size={19}/></div><span>Latest checkup</span><b>{items[0]?.title || 'Health record'}</b><small>{items[0]?.date || 'Today'}</small></div>
+        <div className="snapshot-card"><div className="metric-icon coral"><CalendarDays size={19}/></div><span>Next reminder</span><b>Check back soon</b><small>Follow your care plan</small></div>
       </div>
     </>}
 
