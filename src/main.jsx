@@ -276,7 +276,7 @@ function App() {
       {showSearch && <SearchPanel searchTerm={searchTerm} setSearchTerm={setSearchTerm} submitSearch={() => { setShowSearch(false); setTab('Records'); }} chooseExample={(example) => { setSearchTerm(example); setShowSearch(false); setTab('Records'); }} />}
 
       <div className="content">
-        {tab === 'Home' && (showTimeline ? <TimelinePage items={items} selectedRecord={timelineRecord} onSelectRecord={setTimelineRecord} onBack={() => { setShowTimeline(false); setTimelineRecord(null); }} /> : <HomeScreen activePerson={activePerson} setActivePerson={setActivePerson} items={items} onAdd={() => setShowAdd(true)} onViewTimeline={() => setShowTimeline(true)} showNotifications={showNotifications} toggleNotifications={() => setShowNotifications(open => !open)} />)}
+        {tab === 'Home' && (showTimeline ? <TimelinePage items={items} selectedRecord={timelineRecord} onSelectRecord={setTimelineRecord} onBack={() => { setShowTimeline(false); setTimelineRecord(null); }} /> : <HomeScreen activePerson={activePerson} setActivePerson={setActivePerson} familyList={familyList} items={items} onAdd={() => setShowAdd(true)} onViewTimeline={() => setShowTimeline(true)} showNotifications={showNotifications} toggleNotifications={() => setShowNotifications(open => !open)} />)}
         {tab === 'Records' && (recordDetail ? <RecordDetailPage record={recordDetail} onBack={() => setRecordDetail(null)} /> : <RecordsScreen items={items} searchTerm={searchTerm} setSearchTerm={setSearchTerm} onAdd={() => setShowAdd(true)} onOpenRecord={setRecordDetail} />)}
         {tab === 'Family' && (showAddFamily ? <AddFamilyMemberPage onBack={() => setShowAddFamily(false)} onSave={addFamilyMember} /> : editingMember ? <EditFamilyMemberPage member={editingMember} onBack={() => setEditingMember(null)} onSave={(updatedMember) => updateFamilyMember(updatedMember, editingMember.name)} onDelete={() => deleteFamilyMember(editingMember)} /> : <FamilyScreen activePerson={activePerson} setActivePerson={setActivePerson} familyList={familyList} onAddMember={() => setShowAddFamily(true)} onOpenMember={setEditingMember} />)}
         {tab === 'Profile' && (editProfile ? <EditProfilePage details={profileDetails} onBack={() => setEditProfile(false)} onSave={saveProfile} /> : settingsPage ? <SettingsPage page={settingsPage} activePerson={activePerson} items={items} onBack={() => setSettingsPage(null)} /> : <ProfileScreen activePerson={activePerson} profileDetails={profileDetails} onLogout={() => signOut(auth)} openSettings={setSettingsPage} openEditProfile={() => setEditProfile(true)} />)}
@@ -301,6 +301,7 @@ function AuthScreen() {
   const [legalPage, setLegalPage] = useState(null);
   const [authError, setAuthError] = useState('');
   const [confirmationResult, setConfirmationResult] = useState(null);
+  const [authLoading, setAuthLoading] = useState(false);
   const recaptchaRef = useRef(null);
   const title = screen === 'signup' ? 'Create your account' : 'Welcome back';
   const showAuthError = (error) => {
@@ -325,6 +326,7 @@ function AuthScreen() {
   const submitPhone = async (event) => {
     event.preventDefault();
     setAuthError('');
+    setAuthLoading(true);
     try {
       if (!recaptchaRef.current) {
         recaptchaRef.current = new RecaptchaVerifier(auth, 'recaptcha-container', { size: 'invisible' });
@@ -336,15 +338,20 @@ function AuthScreen() {
       showAuthError(error);
       recaptchaRef.current?.clear();
       recaptchaRef.current = null;
+    } finally {
+      setAuthLoading(false);
     }
   };
   const verifyCode = async (event) => {
     event.preventDefault();
     setAuthError('');
+    setAuthLoading(true);
     try {
       await confirmationResult.confirm(code);
     } catch (error) {
       showAuthError(error);
+    } finally {
+      setAuthLoading(false);
     }
   };
 
@@ -361,7 +368,7 @@ function AuthScreen() {
     <button className="back-button" onClick={() => setScreen('signup')}><ArrowLeft size={20}/></button><AuthBrand compact />
     <div className="form-heading"><div className="verification-icon"><Smartphone size={25}/></div><h1>Check your messages</h1><p>We sent a 6-digit code to <b>{phone ? `${countryCode} ${phone}` : `${countryCode} (555) 000-0000`}</b>.</p></div>
     <form onSubmit={verifyCode}><label className="field-label">VERIFICATION CODE</label><input aria-label="Verification code" className="code-input" inputMode="numeric" maxLength="6" placeholder="• • • • • •" value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ''))} autoFocus/>
-      <button className="auth-primary" type="submit">Verify and continue <Check size={18}/></button></form>
+      <button className="auth-primary" type="submit" disabled={authLoading}>{authLoading ? 'Verifying code...' : 'Verify and continue'} {!authLoading && <Check size={18}/>}</button></form>
     {authError && <p className="auth-error">{authError}</p>}
     <button className="resend-button" onClick={() => setCode('')}>Didn't receive a code? <b>Resend</b></button><button className="change-number" onClick={() => setScreen('signup')}>Use a different number</button>
   </section></main>;
@@ -372,7 +379,7 @@ function AuthScreen() {
     <button className="google-button" onClick={loginWithGoogle}><span className="google-mark" aria-hidden="true"/><span>Continue with Google</span></button>
     <div className="divider"><span/>or continue with phone<span/></div>
     <form onSubmit={submitPhone}><label className="field-label" htmlFor="phone">PHONE NUMBER</label><div className="phone-field"><div className={`country-select ${countryOpen ? 'country-open' : ''}`}><button className="country-trigger" type="button" aria-label="Country code" aria-expanded={countryOpen} onClick={() => setCountryOpen(open => !open)}><span>{countryCode}</span><ChevronDown size={14}/></button>{countryOpen && <div className="country-menu" role="listbox">{countryCodes.map(([country, codeValue]) => <button className={countryCode === codeValue ? 'country-option selected' : 'country-option'} type="button" role="option" aria-selected={countryCode === codeValue} key={`${country}-${codeValue}`} onClick={() => { setCountryCode(codeValue); setCountryOpen(false); }}><span>{country}</span>{countryCode === codeValue && <Check size={14}/>}</button>)}</div>}</div><input id="phone" type="tel" inputMode="tel" placeholder="(555) 000-0000" value={phone} onChange={e => setPhone(e.target.value)} required/></div>
-      <button className="auth-primary" type="submit">{screen === 'signup' ? 'Continue with phone' : 'Send sign-in code'} <ArrowUpRight size={18}/></button></form>
+      <button className="auth-primary" type="submit" disabled={authLoading}>{authLoading ? 'Sending code...' : screen === 'signup' ? 'Continue with phone' : 'Send sign-in code'} {!authLoading && <ArrowUpRight size={18}/>}</button></form>
     <p className="terms-copy">By continuing, you agree to our <button type="button" onClick={() => setLegalPage('terms')}>Terms of Use</button> and <button type="button" onClick={() => setLegalPage('privacy')}>Privacy Policy</button>.</p>
     <div className="switch-auth">{screen === 'signup' ? 'Already have an account?' : 'New to MyFamilyHealth?'} <button onClick={() => setScreen(screen === 'signup' ? 'signin' : 'signup')}>{screen === 'signup' ? 'Sign in' : 'Create an account'}</button></div>
     {authError && <p className="auth-error">{authError}</p>}
@@ -418,17 +425,16 @@ function LegalDialog({ page, close }) {
   </div>;
 }
 
-function HomeScreen({ activePerson, setActivePerson, items, onAdd, onViewTimeline, showNotifications, toggleNotifications }) {
-  const personCycle = ['Phalguna Rao BAMMIDI', 'Swetha NAYANI', 'Vinay Kumar DURGAM'];
+function HomeScreen({ activePerson, setActivePerson, familyList, items, onAdd, onViewTimeline, showNotifications, toggleNotifications }) {
+  const personCycle = familyList.map(member => member.name);
   const currentIndex = personCycle.indexOf(activePerson);
-  const nextPerson = personCycle[(currentIndex + 1) % personCycle.length];
-  const firstName = activePerson.split(' ')[0];
-  const initials = activePerson.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase();
-  const followUp = {
-    'Phalguna Rao BAMMIDI': ['Review blood work', 'With Dr. Sofia Ramos · Due Sep 16'],
-    'Swetha NAYANI': ['Review knee MRI', 'With Dr. K. Mehta · Due Sep 20'],
-    'Vinay Kumar DURGAM': ['Review CBC panel', 'With Dr. L. Chowdary · Due Sep 18'],
-  }[activePerson] || ['No follow-up scheduled', 'Add a care plan when needed'];
+  const nextPerson = personCycle.length ? personCycle[(currentIndex + 1) % personCycle.length] : activePerson;
+  const firstName = (activePerson || 'there').split(' ')[0];
+  const initials = activePerson ? activePerson.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase() : '?';
+  const activeMember = familyList.find(member => member.name === activePerson);
+  const followUp = activeMember?.followUpTitle
+    ? [activeMember.followUpTitle, activeMember.followUpDetail || '']
+    : ['No follow-up scheduled', 'Add a care plan when needed'];
 
   return <>
     <div className="hello-row"><div><p className="eyebrow">TUESDAY, SEPTEMBER 9</p><h1>Good morning, {firstName}</h1></div><button className="bell" onClick={toggleNotifications} aria-label="Notifications" aria-expanded={showNotifications}><Bell size={19}/><i/><span className="notification-count">{notifications.filter(notification => notification.unread).length}</span></button></div>
