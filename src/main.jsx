@@ -452,14 +452,16 @@ function HomeScreen({ activePerson, setActivePerson, familyList, items, onAdd, o
       <div className="status-detail"><div className="status-detail-icon followup"><CalendarDays size={17}/></div><div><p>IMMEDIATE FOLLOW-UP</p><b>{followUp[0]}</b><span>{followUp[1]}</span></div></div>
     </section>
 
-    <div className="section-heading"><div><p className="eyebrow">AT A GLANCE</p><h2>Your health snapshot</h2></div><button className="link-button" onClick={onViewTimeline}>See all</button></div>
-    <div className="snapshot-grid">
-      <div className="snapshot-card"><div className="metric-icon purple"><Activity size={19}/></div><span>Latest checkup</span><b>Blood work</b><small>Today</small></div>
-      <div className="snapshot-card"><div className="metric-icon coral"><CalendarDays size={19}/></div><span>Next reminder</span><b>Dental cleaning</b><small>Oct 14</small></div>
-    </div>
+    {items.length > 0 && <>
+      <div className="section-heading"><div><p className="eyebrow">AT A GLANCE</p><h2>Your health snapshot</h2></div><button className="link-button" onClick={onViewTimeline}>See all</button></div>
+      <div className="snapshot-grid">
+        <div className="snapshot-card"><div className="metric-icon purple"><Activity size={19}/></div><span>Latest checkup</span><b>Blood work</b><small>Today</small></div>
+        <div className="snapshot-card"><div className="metric-icon coral"><CalendarDays size={19}/></div><span>Next reminder</span><b>Dental cleaning</b><small>Oct 14</small></div>
+      </div>
+    </>}
 
-    <div className="section-heading recent"><div><p className="eyebrow">TIMELINE</p><h2>Recent records</h2></div><button className="link-button" onClick={onViewTimeline}>View history</button></div>
-    <div className="timeline">{items.slice(0,3).map((r, i) => <RecordRow record={r} key={i} onOpen={() => onOpenRecord(r)}/>)}</div>
+    <div className="section-heading recent"><div><p className="eyebrow">TIMELINE</p><h2>Recent records</h2></div>{items.length > 0 && <button className="link-button" onClick={onViewTimeline}>View history</button>}</div>
+    {items.length > 0 ? <div className="timeline">{items.slice(0,3).map((r, i) => <RecordRow record={r} key={i} onOpen={() => onOpenRecord(r)}/>)}</div> : <div className="empty-search">Start adding health records to see them here.</div>}
     <button className="add-record" onClick={onAdd}><Plus size={21}/><span>Add a health record</span></button>
     <p className="privacy-note"><LockKeyhole size={14}/>Your records are private and encrypted</p>
   </>;
