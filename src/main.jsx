@@ -665,7 +665,7 @@ function HomeScreen({ activePerson, setActivePerson, primaryMemberName, familyLi
     // If no recordBelongsTo field, default to primary account holder
     const itemBelongsTo = item.recordBelongsTo || primaryMemberName;
     return itemBelongsTo === activePerson;
-  });
+  }).sort((a, b) => timelineDate(b) - timelineDate(a)); // Sort by date descending (newest first)
   
   const today = new Date();
   const dayName = today.toLocaleString('en-US', { weekday: 'long' }).toUpperCase();
@@ -976,7 +976,7 @@ function RecordsScreen({ items, searchTerm, setSearchTerm, onAdd, onOpenRecord, 
     return itemBelongsTo === activePerson;
   });
   
-  const allItems = personFilteredItems;
+  const allItems = personFilteredItems.sort((a, b) => timelineDate(b) - timelineDate(a)); // Sort by date descending (newest first)
   const normalizedSearch = searchTerm.toLowerCase().trim();
   const filteredItems = allItems.filter(record => {
     const matchesType = recordFilter === 'all' || record.kind === recordFilter;
