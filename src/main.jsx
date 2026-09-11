@@ -196,9 +196,14 @@ function App() {
           const profile = profileSnapshot.data();
           setProfileDetails(current => ({ ...current, ...profile }));
           if (profile.fullName) setActivePerson(profile.fullName);
-        } else if (currentUser.displayName) {
-          setProfileDetails(current => ({ ...current, fullName: currentUser.displayName }));
-          setActivePerson(currentUser.displayName);
+        } else {
+          if (currentUser.displayName) {
+            setProfileDetails(current => ({ ...current, fullName: currentUser.displayName }));
+            setActivePerson(currentUser.displayName);
+          }
+          // First sign-in after registration: send the user straight to their profile details form.
+          setTab('Profile');
+          setEditProfile(true);
         }
         setFamilyList(familySnapshot.docs.map(snapshot => ({ id: snapshot.id, ...snapshot.data() })));
         setItems(recordsSnapshot.docs.map(snapshot => hydrateRecord(snapshot.id, snapshot.data())));
