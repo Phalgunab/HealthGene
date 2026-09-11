@@ -26,9 +26,32 @@ const records = [];
 const searchExamples = ['Fever in last month', 'Apollo visit last month', 'Lab reports for Swetha'];
 
 const timelineDate = (record) => {
+  if (!record.date) return new Date();
+  // Handle ISO date format (YYYY-MM-DD)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(record.date)) {
+    return new Date(record.date + 'T00:00:00Z');
+  }
+  // Handle legacy format
   if (record.date === 'Today') return new Date();
   const parsed = new Date(`${record.date}, ${new Date().getFullYear()}`);
   return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+};
+
+const formatRecordDate = (dateString) => {
+  if (!dateString) return 'Not dated';
+  // Handle ISO date format (YYYY-MM-DD)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+    const date = new Date(dateString + 'T00:00:00Z');
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+  // Handle legacy format
+  if (dateString === 'Today') {
+    return new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+  if (dateString === 'Just now') {
+    return new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+  return dateString;
 };
 
 const recordKindConfig = {
@@ -181,6 +204,33 @@ function App() {
     setAuthReady(true);
   }), []);
 
+  const formatNotificationDate = (date) => {
+    if (!date) return 'Unknown date';
+    let dateObj = date;
+    if (date.toDate && typeof date.toDate === 'function') {
+      dateObj = date.toDate();
+    } else if (!(date instanceof Date)) {
+      dateObj = new Date(date);
+    }
+    
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today.getTime() - 86400000);
+    const notifDate = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate());
+    
+    let dateStr = '';
+    if (notifDate.getTime() === today.getTime()) {
+      dateStr = 'Today';
+    } else if (notifDate.getTime() === yesterday.getTime()) {
+      dateStr = 'Yesterday';
+    } else {
+      dateStr = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: dateObj.getFullYear() !== now.getFullYear() ? 'numeric' : undefined });
+    }
+    
+    const timeStr = dateObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+    return `${dateStr}, ${timeStr}`;
+  };
+
   const getTimeAgo = (date) => {
     if (!date) return 'just now';
     let dateObj = date;
@@ -219,7 +269,7 @@ function App() {
         return {
           id: doc.id,
           ...data,
-          time: getTimeAgo(data.createdAt),
+          time: formatNotificationDate(data.createdAt),
         };
       }).sort((a, b) => convertTimestamp(b.createdAt) - convertTimestamp(a.createdAt));
       setNotifications(loaded);
@@ -242,7 +292,7 @@ function App() {
       const newNotif = {
         id: docRef.id,
         ...notification,
-        time: getTimeAgo(now),
+        time: formatNotificationDate(now),
       };
       setNotifications(current => [newNotif, ...current]);
     } catch (error) {
@@ -646,7 +696,7 @@ function RecordDetailPage({ record, onBack, onEdit }) {
 
 function DetailField({ label, value }) { return <div className="detail-field"><p>{label}</p><b>{value}</b></div>; }
 
-function RecordRow({ record, onOpen }) { const Icon = record.icon; return <button className="record-row" onClick={onOpen}><div className={`record-icon ${record.tone}`}><Icon size={19}/></div><div className="record-copy"><b>{record.title}</b><span>{record.source}</span></div><div className="record-date">{record.date}<ChevronRight size={16}/></div></button> }
+function RecordRow({ record, onOpen }) { const Icon = record.icon; return <button className="record-row" onClick={onOpen}><div className={`record-icon ${record.tone}`}><Icon size={19}/></div><div className="record-copy"><b>{record.title}</b><span>{record.source}</span></div><div className="record-date">{formatRecordDate(record.date)}<ChevronRight size={16}/></div></button> }
 
 function RecordsScreen({ items, searchTerm, setSearchTerm, onAdd, onOpenRecord }) {
   const [recordFilter, setRecordFilter] = useState('all');
