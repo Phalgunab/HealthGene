@@ -55,3 +55,16 @@
 .attachment-action.delete:hover{color:#fff;background:#b35d50;border-color:#b35d50}
 .add-attachment-button{width:100%;padding:10px;border:1px dashed #287368;border-radius:10px;color:#287368;background:#f5fbf8;font-size:12px;font-weight:600;cursor:pointer;transition:all .2s ease}
 .add-attachment-button:hover{background:#eaf6f1;border-style:solid}
+
+/* Edit Record Form */
+.edit-record-form{display:grid;gap:16px}
+.edit-record-form .form-section{display:grid;gap:10px}
+.edit-record-form .form-section label{margin:0;color:#80918b;font-size:10px;font-weight:800;letter-spacing:1px}
+
+/* Edit Record Auto-Populate Methods */
+.compact-methods{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.compact-method{padding:8px !important;gap:6px !important}
+.compact-method>label{font-size:10px;margin:0}
+.compact-method textarea{font-size:11px;padding:6px;height:auto;min-height:40px}
+.compact-method .method-button{padding:7px;font-size:11px}
+@media (max-width:480px){.compact-methods{grid-template-columns:1fr;gap:10px}.compact-method{padding:10px !important}}

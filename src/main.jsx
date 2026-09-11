@@ -449,8 +449,8 @@ function App() {
       {showSearch && <SearchPanel searchTerm={searchTerm} setSearchTerm={setSearchTerm} submitSearch={() => { setShowSearch(false); setTab('Records'); }} chooseExample={(example) => { setSearchTerm(example); setShowSearch(false); setTab('Records'); }} />}
 
       <div className="content">
-        {tab === 'Home' && (showTimeline ? (editingRecord ? <EditRecordPage record={editingRecord} onBack={() => setEditingRecord(null)} onSave={(updates) => updateRecord(editingRecord.id, updates)} /> : <TimelinePage items={items} selectedRecord={timelineRecord} onSelectRecord={setTimelineRecord} onEdit={() => setEditingRecord(timelineRecord)} onBack={() => { setShowTimeline(false); setTimelineRecord(null); }} />) : recordDetail ? (editingRecord ? <EditRecordPage record={editingRecord} onBack={() => setEditingRecord(null)} onSave={(updates) => updateRecord(editingRecord.id, updates)} /> : <RecordDetailPage record={recordDetail} onEdit={() => setEditingRecord(recordDetail)} onBack={() => setRecordDetail(null)} />) : <HomeScreen activePerson={activePerson} setActivePerson={setActivePerson} primaryMemberName={profileDetails.fullName} familyList={familyList} items={items} notifications={notifications} onMarkNotificationAsRead={markNotificationAsRead} onAdd={() => setShowAdd(true)} onViewTimeline={() => setShowTimeline(true)} onOpenRecord={setRecordDetail} showNotifications={showNotifications} showReadNotifications={showReadNotifications} setShowReadNotifications={setShowReadNotifications} unreadNotificationPage={unreadNotificationPage} setUnreadNotificationPage={setUnreadNotificationPage} readNotificationPage={readNotificationPage} setReadNotificationPage={setReadNotificationPage} toggleNotifications={() => setShowNotifications(open => !open)} />)}
-        {tab === 'Records' && (recordDetail ? (editingRecord ? <EditRecordPage record={editingRecord} onBack={() => setEditingRecord(null)} onSave={(updates) => updateRecord(editingRecord.id, updates)} /> : <RecordDetailPage record={recordDetail} onEdit={() => setEditingRecord(recordDetail)} onBack={() => setRecordDetail(null)} />) : <RecordsScreen items={items} searchTerm={searchTerm} setSearchTerm={setSearchTerm} onAdd={() => setShowAdd(true)} onOpenRecord={setRecordDetail} />)}
+        {tab === 'Home' && (showTimeline ? (editingRecord ? <EditRecordPage record={editingRecord} onBack={() => setEditingRecord(null)} onSave={(updates) => updateRecord(editingRecord.id, updates)} primaryMemberName={profileDetails.fullName} familyList={familyList} /> : <TimelinePage items={items} selectedRecord={timelineRecord} onSelectRecord={setTimelineRecord} onEdit={() => setEditingRecord(timelineRecord)} onBack={() => { setShowTimeline(false); setTimelineRecord(null); }} />) : recordDetail ? (editingRecord ? <EditRecordPage record={editingRecord} onBack={() => setEditingRecord(null)} onSave={(updates) => updateRecord(editingRecord.id, updates)} primaryMemberName={profileDetails.fullName} familyList={familyList} /> : <RecordDetailPage record={recordDetail} onEdit={() => setEditingRecord(recordDetail)} onBack={() => setRecordDetail(null)} />) : <HomeScreen activePerson={activePerson} setActivePerson={setActivePerson} primaryMemberName={profileDetails.fullName} familyList={familyList} items={items} notifications={notifications} onMarkNotificationAsRead={markNotificationAsRead} onAdd={() => setShowAdd(true)} onViewTimeline={() => setShowTimeline(true)} onOpenRecord={setRecordDetail} showNotifications={showNotifications} showReadNotifications={showReadNotifications} setShowReadNotifications={setShowReadNotifications} unreadNotificationPage={unreadNotificationPage} setUnreadNotificationPage={setUnreadNotificationPage} readNotificationPage={readNotificationPage} setReadNotificationPage={setReadNotificationPage} toggleNotifications={() => setShowNotifications(open => !open)} />)}
+        {tab === 'Records' && (recordDetail ? (editingRecord ? <EditRecordPage record={editingRecord} onBack={() => setEditingRecord(null)} onSave={(updates) => updateRecord(editingRecord.id, updates)} primaryMemberName={profileDetails.fullName} familyList={familyList} /> : <RecordDetailPage record={recordDetail} onEdit={() => setEditingRecord(recordDetail)} onBack={() => setRecordDetail(null)} />) : <RecordsScreen items={items} searchTerm={searchTerm} setSearchTerm={setSearchTerm} onAdd={() => setShowAdd(true)} onOpenRecord={setRecordDetail} />)}
         {tab === 'Family' && (showAddFamily ? <AddFamilyMemberPage onBack={() => setShowAddFamily(false)} onSave={addFamilyMember} /> : editingMember ? <EditFamilyMemberPage member={editingMember} onBack={() => setEditingMember(null)} onSave={(updatedMember) => updateFamilyMember(updatedMember, editingMember.name)} onDelete={() => deleteFamilyMember(editingMember)} /> : <FamilyScreen activePerson={activePerson} setActivePerson={setActivePerson} primaryMemberName={profileDetails.fullName} familyList={familyList} onAddMember={() => setShowAddFamily(true)} onOpenMember={setEditingMember} />)}
         {tab === 'Profile' && (editProfile ? <EditProfilePage details={profileDetails} onBack={() => setEditProfile(false)} onSave={saveProfile} /> : settingsPage ? <SettingsPage page={settingsPage} activePerson={activePerson} familyList={familyList} items={items} onBack={() => setSettingsPage(null)} /> : <ProfileScreen activePerson={activePerson} profileDetails={profileDetails} onLogout={() => signOut(auth)} openSettings={setSettingsPage} openEditProfile={() => setEditProfile(true)} />)}
       </div>
@@ -661,7 +661,7 @@ function HomeScreen({ activePerson, setActivePerson, primaryMemberName, familyLi
   </>;
 }
 
-function EditRecordPage({ record, onBack, onSave }) {
+function EditRecordPage({ record, onBack, onSave, primaryMemberName, familyList }) {
   const [form, setForm] = useState({
     title: record.title,
     hospital: record.hospital,
@@ -669,16 +669,199 @@ function EditRecordPage({ record, onBack, onSave }) {
     amount: record.amount,
     notes: record.notes,
     visitDate: record.date,
+    recordBelongsTo: record.recordBelongsTo || primaryMemberName || '',
   });
+  const [attachments, setAttachments] = useState(record.attachments || []);
+  const [messageText, setMessageText] = useState('');
+  const attachmentInputRef = useRef(null);
+  const scanInputRef = useRef(null);
+  const uploadInputRef = useRef(null);
+
+  const familyOptions = [
+    { name: primaryMemberName, label: 'Personal health space' },
+    ...(familyList || []).map(member => ({ name: member.name, label: member.relationship || 'Family member' }))
+  ];
+
+  const setField = (field) => (event) => {
+    const value = event.target.value;
+    setForm((current) => ({ ...current, [field]: value }));
+  };
+
+  const addAttachment = async (file) => {
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const attachment = {
+        id: Math.random().toString(36).substr(2, 9),
+        filename: file.name,
+        type: file.type,
+        size: file.size,
+        uploadedAt: new Date().toISOString(),
+        data: e.target?.result,
+      };
+      setAttachments([...attachments, attachment]);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeAttachment = (attachmentId) => {
+    setAttachments(attachments.filter(att => att.id !== attachmentId));
+  };
+
+  const downloadAttachment = (attachment) => {
+    const link = document.createElement('a');
+    link.href = attachment.data;
+    link.download = attachment.filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const getFileTypeIcon = (type) => {
+    if (type.startsWith('image/')) return '🖼️';
+    if (type === 'application/pdf') return '📄';
+    return '📎';
+  };
+
+  const formatFileSize = (bytes) => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+  };
+
+  const importFromMessage = () => {
+    const parsed = parseIncomingMessage(messageText);
+    if (Object.keys(parsed).length === 0) return;
+
+    setForm((current) => ({
+      ...current,
+      ...parsed,
+      title: parsed.title || current.title,
+      hospital: parsed.hospital || current.hospital,
+      doctor: parsed.doctor || current.doctor,
+      amount: parsed.amount || current.amount,
+      visitDate: parsed.visitDate || current.visitDate,
+      notes: parsed.notes || current.notes,
+    }));
+    setMessageText('');
+  };
+
+  const handleFileUpload = async (event, type) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    await handleUploadedDocument(file, setForm);
+    event.target.value = '';
+  };
+
+  const openInput = (type) => {
+    (type === 'Scan' ? scanInputRef : uploadInputRef).current?.click();
+  };
 
   const submit = (event) => {
     event.preventDefault();
-    onSave({ ...form, date: form.visitDate });
+    if (!form.recordBelongsTo) {
+      alert('Please select who this record belongs to');
+      return;
+    }
+    onSave({ ...form, date: form.visitDate, attachments });
   };
 
-  const update = (field) => (event) => setForm(current => ({ ...current, [field]: event.target.value }));
+  const handleAttachmentUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      await addAttachment(file);
+    }
+    event.target.value = '';
+  };
 
-  return <div className="add-family-page"><button className="settings-back" onClick={onBack}><ArrowLeft size={18}/>Cancel</button><div className="add-family-heading"><span className={`record-icon ${record.tone}`}><Settings size={25}/></span><p className="eyebrow">EDIT RECORD</p><h1>Update health record</h1><p>Make changes to this record.</p></div><form className="family-form" onSubmit={submit}><label htmlFor="edit-record-title">RECORD TITLE</label><input id="edit-record-title" value={form.title} onChange={update('title')} placeholder="e.g. Blood work" required/><label htmlFor="edit-record-date">DATE OF VISIT</label><input id="edit-record-date" type="date" value={form.visitDate} onChange={update('visitDate')} /><label htmlFor="edit-record-hospital">HOSPITAL / CLINIC</label><input id="edit-record-hospital" value={form.hospital} onChange={update('hospital')} placeholder="e.g. Apollo Hospitals" /><label htmlFor="edit-record-doctor">DOCTOR / PROVIDER</label><input id="edit-record-doctor" value={form.doctor} onChange={update('doctor')} placeholder="e.g. Dr. Smith" /><label htmlFor="edit-record-amount">AMOUNT PAID</label><input id="edit-record-amount" value={form.amount} onChange={update('amount')} placeholder="e.g. $100" /><label htmlFor="edit-record-notes">NOTES</label><textarea id="edit-record-notes" value={form.notes} onChange={update('notes')} placeholder="Additional details about your visit..."/><button className="auth-primary" type="submit"><Check size={18}/>Save changes</button></form></div>;
+  return <div className="add-family-page"><button className="settings-back" onClick={onBack}><ArrowLeft size={18}/>Cancel</button><div className="add-family-heading"><span className={`record-icon ${record.tone}`}><Settings size={25}/></span><p className="eyebrow">EDIT RECORD</p><h1>Update health record</h1><p>Make changes to this record and manage attachments.</p></div><form className="family-form edit-record-form" onSubmit={submit}>
+    <div className="form-section">
+      <label htmlFor="record-belongs-to">RECORD BELONGS TO</label>
+      <select id="record-belongs-to" value={form.recordBelongsTo} onChange={setField('recordBelongsTo')} className="family-select">
+        <option value="">Select family member...</option>
+        {familyOptions.map(option => (
+          <option key={option.name} value={option.name}>
+            {option.name} — {option.label}
+          </option>
+        ))}
+      </select>
+    </div>
+
+    <div className="form-section">
+      <label htmlFor="edit-record-title">RECORD TITLE</label>
+      <input id="edit-record-title" value={form.title} onChange={setField('title')} placeholder="e.g. Blood work" required/>
+      
+      <label htmlFor="edit-record-date">DATE OF VISIT</label>
+      <input id="edit-record-date" type="date" value={form.visitDate} onChange={setField('visitDate')} />
+      
+      <label htmlFor="edit-record-hospital">HOSPITAL / CLINIC</label>
+      <input id="edit-record-hospital" value={form.hospital} onChange={setField('hospital')} placeholder="e.g. Apollo Hospitals" />
+      
+      <label htmlFor="edit-record-doctor">DOCTOR / PROVIDER</label>
+      <input id="edit-record-doctor" value={form.doctor} onChange={setField('doctor')} placeholder="e.g. Dr. Smith" />
+      
+      <label htmlFor="edit-record-amount">AMOUNT PAID</label>
+      <input id="edit-record-amount" value={form.amount} onChange={setField('amount')} placeholder="e.g. $100" />
+      
+      <label htmlFor="edit-record-notes">NOTES</label>
+      <textarea id="edit-record-notes" value={form.notes} onChange={setField('notes')} placeholder="Additional details about your visit..."/>
+    </div>
+
+    <div className="form-section">
+      <label>AUTO-POPULATE FROM</label>
+      <div className="input-methods compact-methods">
+        <div className="input-method compact-method">
+          <label>📱 Load from SMS</label>
+          <textarea rows="2" value={messageText} onChange={(e) => setMessageText(e.target.value)} placeholder="Paste medical info from messages..." className="message-textarea" />
+          <button type="button" onClick={importFromMessage} className="method-button">Extract from SMS</button>
+        </div>
+        <div className="input-method compact-method">
+          <label>📷 Scan with Camera</label>
+          <button type="button" onClick={() => openInput('Scan')} className="method-button">Open Camera</button>
+        </div>
+        <div className="input-method compact-method">
+          <label>📄 Upload Document</label>
+          <button type="button" onClick={() => openInput('Upload')} className="method-button">Choose File</button>
+        </div>
+      </div>
+    </div>
+
+    {attachments.length > 0 && (
+      <div className="form-section">
+        <label>ATTACHMENTS ({attachments.length})</label>
+        <div className="attachments-list">
+          {attachments.map((att) => (
+            <div key={att.id} className="attachment-item">
+              <div className="attachment-info">
+                <span className="attachment-icon">{getFileTypeIcon(att.type)}</span>
+                <div className="attachment-details">
+                  <div className="attachment-name">{att.filename}</div>
+                  <div className="attachment-meta">{formatFileSize(att.size)} • {att.type}</div>
+                </div>
+              </div>
+              <div className="attachment-actions">
+                <button type="button" onClick={() => downloadAttachment(att)} className="attachment-action" title="Download"><ArrowUpRight size={16}/></button>
+                <button type="button" onClick={() => removeAttachment(att.id)} className="attachment-action delete" title="Delete"><X size={16}/></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
+
+    <div className="form-section">
+      <button type="button" onClick={() => attachmentInputRef.current?.click()} className="add-attachment-button">+ Add attachment</button>
+    </div>
+
+    <input ref={scanInputRef} className="hidden-file-input" type="file" accept="image/*" capture="environment" onChange={(event) => handleFileUpload(event, 'Scan')} />
+    <input ref={uploadInputRef} className="hidden-file-input" type="file" accept=".pdf,image/*" onChange={(event) => handleFileUpload(event, 'Upload')} />
+    <input ref={attachmentInputRef} className="hidden-file-input" type="file" onChange={handleAttachmentUpload} />
+
+    <button className="auth-primary" type="submit"><Check size={18}/>Save changes</button>
+  </form></div>;
 }
 
 function TimelinePage({ items, selectedRecord, onSelectRecord, onEdit, onBack }) {
