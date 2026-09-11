@@ -648,18 +648,7 @@ function HomeScreen({ activePerson, setActivePerson, primaryMemberName, familyLi
       {personMenuOpen && <div className="person-menu" role="listbox">{primaryMemberName && <button className={activePerson === primaryMemberName ? 'person-option selected' : 'person-option'} type="button" role="option" aria-selected={activePerson === primaryMemberName} key={`primary-${primaryMemberName}`} onClick={() => { setActivePerson(primaryMemberName); setPersonMenuOpen(false); }}><span className="person-mini">{primaryMemberName.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase()}</span><span><b>{primaryMemberName}</b><small>Personal health space</small></span>{activePerson === primaryMemberName && <Check size={16}/>}</button>}{familyList.map(member => { const memberInitials = member.name.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase(); return <button className={activePerson === member.name ? 'person-option selected' : 'person-option'} type="button" role="option" aria-selected={activePerson === member.name} key={member.id || member.name} onClick={() => { setActivePerson(member.name); setPersonMenuOpen(false); }}><span className="person-mini">{memberInitials}</span><span><b>{member.name}</b><small>{member.relationship || 'Family member'}</small></span>{activePerson === member.name && <Check size={16}/>}</button>; })}</div>}
     </div>
 
-    <section className="status-card">
-      <div className="status-detail"><div className="status-detail-icon medication"><ShieldCheck size={17}/></div><div><p>RUNNING MEDICATION</p><b>No running medication</b><span>Nothing active on this profile</span></div></div>
-      <div className="status-detail"><div className="status-detail-icon followup"><CalendarDays size={17}/></div><div><p>IMMEDIATE FOLLOW-UP</p><b>{followUp[0]}</b><span>{followUp[1]}</span></div></div>
-    </section>
 
-    {items.length > 0 && <>
-      <div className="section-heading"><div><p className="eyebrow">AT A GLANCE</p><h2>Your health snapshot</h2></div><button className="link-button" onClick={onViewTimeline}>See all</button></div>
-      <div className="snapshot-grid">
-        <div className="snapshot-card"><div className="metric-icon purple"><Activity size={19}/></div><span>Latest checkup</span><b>{items[0]?.title || 'Health record'}</b><small>{items[0]?.date || 'Today'}</small></div>
-        <div className="snapshot-card"><div className="metric-icon coral"><CalendarDays size={19}/></div><span>Next reminder</span><b>Check back soon</b><small>Follow your care plan</small></div>
-      </div>
-    </>}
 
     <div className="section-heading recent"><div><p className="eyebrow">TIMELINE</p><h2>Recent records</h2></div>{items.length > 0 && <button className="link-button" onClick={onViewTimeline}>View history</button>}</div>
     {items.length > 0 ? <div className="timeline">{items.slice(0,3).map((r, i) => <RecordRow record={r} key={i} onOpen={() => onOpenRecord(r)}/>)}</div> : <div className="empty-search">Start adding health records to see them here.</div>}
