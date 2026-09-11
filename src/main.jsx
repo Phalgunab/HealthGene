@@ -180,8 +180,14 @@ function App() {
 
   const getTimeAgo = (date) => {
     if (!date) return 'just now';
+    let dateObj = date;
+    if (date.toDate && typeof date.toDate === 'function') {
+      dateObj = date.toDate();
+    } else if (!(date instanceof Date)) {
+      dateObj = new Date(date);
+    }
     const now = new Date();
-    const diffMs = now - date;
+    const diffMs = now - dateObj;
     const diffMins = Math.floor(diffMs / 60000);
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
@@ -191,7 +197,15 @@ function App() {
     if (diffHours < 24) return `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
     if (diffDays === 1) return 'Yesterday';
     if (diffDays < 7) return `${diffDays} days ago`;
-    return date.toLocaleDateString();
+    return dateObj.toLocaleDateString();
+  };
+
+  const convertTimestamp = (timestamp) => {
+    if (!timestamp) return new Date();
+    if (timestamp.toDate && typeof timestamp.toDate === 'function') {
+      return timestamp.toDate();
+    }
+    return timestamp instanceof Date ? timestamp : new Date(timestamp);
   };
 
   const loadNotifications = async () => {
@@ -202,9 +216,9 @@ function App() {
         return {
           id: doc.id,
           ...data,
-          time: getTimeAgo(data.createdAt?.toDate?.() || new Date(data.createdAt)),
+          time: getTimeAgo(data.createdAt),
         };
-      }).sort((a, b) => (b.createdAt?.toDate?.() || new Date(b.createdAt)) - (a.createdAt?.toDate?.() || new Date(a.createdAt)));
+      }).sort((a, b) => convertTimestamp(b.createdAt) - convertTimestamp(a.createdAt));
       setNotifications(loaded);
     } catch (error) {
       console.error('Could not load notifications', error);
@@ -214,17 +228,18 @@ function App() {
   const addNotification = async (title, detail) => {
     if (!currentUser) return;
     try {
+      const now = new Date();
       const notification = {
         title,
         detail,
         unread: true,
-        createdAt: new Date(),
+        createdAt: now,
       };
       const docRef = await addDoc(collection(db, 'users', currentUser.uid, 'notifications'), notification);
       const newNotif = {
         id: docRef.id,
         ...notification,
-        time: getTimeAgo(notification.createdAt),
+        time: getTimeAgo(now),
       };
       setNotifications(current => [newNotif, ...current]);
     } catch (error) {
