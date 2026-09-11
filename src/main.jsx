@@ -394,12 +394,31 @@ function App() {
   };
 
   const updateRecord = async (recordId, updates) => {
-    setItems(current => current.map(item => item.id === recordId ? { ...item, ...updates } : item));
+    // Update items and capture the updated record
+    let updatedRecord;
+    setItems(current => {
+      const newItems = current.map(item => {
+        if (item.id === recordId) {
+          updatedRecord = { ...item, ...updates };
+          return updatedRecord;
+        }
+        return item;
+      });
+      return newItems;
+    });
+    
+    // Update recordDetail to show the latest changes
+    if (updatedRecord) {
+      setRecordDetail(updatedRecord);
+    }
+    
+    // Update Firestore
     if (currentUser) {
       await updateDoc(doc(db, 'users', currentUser.uid, 'records', recordId), serializeRecord(updates)).catch(error => console.error('Could not update record', error));
     }
+    
+    // Close edit mode (but keep detail view open to show updated record)
     setEditingRecord(null);
-    setRecordDetail(null);
   };
 
   const saveProfile = async (details) => {
