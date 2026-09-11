@@ -78,6 +78,8 @@ const createRecordForm = (type = 'Scan') => ({
   doctor: '',
   amount: '',
   notes: '',
+  attachments: [],
+  recordBelongsTo: '', // family member name
 });
 
 const serializeRecord = ({ icon, ...record }) => record;
@@ -377,6 +379,8 @@ function App() {
       doctor: details?.doctor?.trim() || '',
       amount: details?.amount?.trim() || '',
       notes: details?.notes?.trim() || '',
+      attachments: details?.attachments || [],
+      recordBelongsTo: details?.recordBelongsTo || activePerson || '',
     };
 
     setItems([record, ...items]);
@@ -455,7 +459,7 @@ function App() {
         {[['Home', Home], ['Records', FileText], ['Family', Users], ['Profile', Settings]].map(([label, Icon]) => <button key={label} onClick={() => { setSettingsPage(null); setEditProfile(false); setShowAddFamily(false); setEditingMember(null); setShowTimeline(false); setTimelineRecord(null); setRecordDetail(null); setEditingRecord(null); setTab(label); }} className={tab === label ? 'nav-active' : ''}><Icon size={20}/><span>{label}</span></button>)}
       </nav>
 
-      {showAdd && <AddSheet close={() => setShowAdd(false)} addRecord={addRecord} />}
+      {showAdd && <AddHealthRecordPage close={() => setShowAdd(false)} addRecord={addRecord} primaryMemberName={profileDetails.fullName} familyList={familyList} />}
       {showNotice && <div className="toast"><ShieldCheck size={18}/>Saved privately to your health timeline</div>}
     </section>
   </main>;
@@ -790,12 +794,19 @@ function SettingsPage({ page, activePerson, familyList, items, onBack }) {
 function SettingToggle({ label, detail, value, onChange }) { return <div className="setting-row"><span><b>{label}</b><small>{detail}</small></span><button className={`setting-toggle ${value ? 'toggle-on' : ''}`} onClick={() => onChange(!value)} aria-pressed={value} aria-label={`${label}: ${value ? 'on' : 'off'}`}><i/></button></div>; }
 function SettingRow({ label, detail }) { return <div className="setting-row"><span><b>{label}</b><small>{detail}</small></span><Check size={17} className="setting-check"/></div>; }
 
-function AddSheet({ close, addRecord }) {
+function AddHealthRecordPage({ close, addRecord, primaryMemberName, familyList }) {
   const [recordType, setRecordType] = useState('Scan');
   const [form, setForm] = useState(createRecordForm('Scan'));
   const [messageText, setMessageText] = useState('');
+  const [attachments, setAttachments] = useState([]);
   const scanInputRef = useRef(null);
   const uploadInputRef = useRef(null);
+  const attachmentInputRef = useRef(null);
+
+  const familyOptions = [
+    { name: primaryMemberName, label: 'Personal health space' },
+    ...familyList.map(member => ({ name: member.name, label: member.relationship || 'Family member' }))
+  ];
 
   const typeMeta = {
     Scan: { label: 'Scan a document', hint: 'Open your camera and capture a document', tone: 'blue', icon: Camera },
@@ -829,9 +840,60 @@ function AddSheet({ close, addRecord }) {
     setMessageText('');
   };
 
+  const addAttachment = async (file) => {
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const attachment = {
+        id: Math.random().toString(36).substr(2, 9),
+        filename: file.name,
+        type: file.type,
+        size: file.size,
+        uploadedAt: new Date().toISOString(),
+        data: e.target?.result,
+      };
+      setAttachments([...attachments, attachment]);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeAttachment = (attachmentId) => {
+    setAttachments(attachments.filter(att => att.id !== attachmentId));
+  };
+
+  const downloadAttachment = (attachment) => {
+    const link = document.createElement('a');
+    link.href = attachment.data;
+    link.download = attachment.filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const getFileTypeIcon = (type) => {
+    if (type.startsWith('image/')) return '🖼️';
+    if (type === 'application/pdf') return '📄';
+    return '📎';
+  };
+
+  const formatFileSize = (bytes) => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+  };
+
   const saveRecord = () => {
-    addRecord(recordType, form);
+    if (!form.recordBelongsTo) {
+      alert('Please select who this record belongs to');
+      return;
+    }
+    const recordWithAttachments = { ...form, attachments };
+    addRecord(recordType, recordWithAttachments);
     setForm(createRecordForm(recordType));
+    setAttachments([]);
   };
 
   const handleFileUpload = async (event, type) => {
@@ -843,42 +905,103 @@ function AddSheet({ close, addRecord }) {
     event.target.value = '';
   };
 
+  const handleAttachmentUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      await addAttachment(file);
+    }
+    event.target.value = '';
+  };
+
   const openInput = (type) => {
     setRecordType(type);
     setForm((current) => ({ ...current, type }));
     (type === 'Scan' ? scanInputRef : uploadInputRef).current?.click();
   };
 
-  return <div className="sheet-backdrop" onClick={close}><div className="add-sheet" onClick={e=>e.stopPropagation()}><div className="sheet-handle"/><div className="sheet-title"><div><p className="eyebrow">KEEP YOUR HISTORY CURRENT</p><h2>Add a record</h2></div><button onClick={close}><X size={20}/></button></div>
-    <div className="add-option-grid">{Object.keys(typeMeta).map((type) => {
-      const Icon = typeMeta[type].icon;
-      return <button key={type} type="button" className={`add-option ${recordType === type ? 'active' : ''}`} onClick={() => openInput(type)}>
-        <span className={`option-icon ${typeMeta[type].tone}`}><Icon size={21}/></span>
-        <span><b>{typeMeta[type].label}</b><small>{typeMeta[type].hint}</small></span>
-        <ChevronRight size={18}/>
-      </button>;
-    })}</div>
+  return <div className="sheet-backdrop" onClick={close}><div className="add-sheet add-health-record-sheet" onClick={e=>e.stopPropagation()}><div className="sheet-handle"/><div className="sheet-title"><div><p className="eyebrow">ADD A HEALTH RECORD</p><h2>Capture your medical information</h2></div><button onClick={close}><X size={20}/></button></div>
+    
+    <div className="record-form record-form-redesigned">
+      <div className="form-section">
+        <h3 className="form-section-title">Record belongs to</h3>
+        <div className="field-group">
+          <select value={form.recordBelongsTo} onChange={setField('recordBelongsTo')} className="family-select">
+            <option value="">Select family member...</option>
+            {familyOptions.map(option => (
+              <option key={option.name} value={option.name}>
+                {option.name} — {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="form-section">
+        <h3 className="form-section-title">Record details</h3>
+        <div className="field-group"><label htmlFor="record-title">Title</label><input id="record-title" value={form.title} onChange={setField('title')} placeholder="Annual checkup" /></div>
+        <div className="field-row">
+          <div className="field-group"><label htmlFor="visit-date">Visit date</label><input id="visit-date" type="date" value={form.visitDate} onChange={setField('visitDate')} /></div>
+          <div className="field-group"><label htmlFor="amount">Amount</label><input id="amount" type="number" min="0" step="0.01" value={form.amount} onChange={setField('amount')} placeholder="0.00" /></div>
+        </div>
+        <div className="field-group"><label htmlFor="hospital">Hospital / clinic</label><input id="hospital" value={form.hospital} onChange={setField('hospital')} placeholder="Memorial Hospital" /></div>
+        <div className="field-group"><label htmlFor="doctor">Doctor / provider</label><input id="doctor" value={form.doctor} onChange={setField('doctor')} placeholder="Dr. Maya Chen" /></div>
+        <div className="field-group"><label htmlFor="notes">Notes</label><textarea id="notes" rows="3" value={form.notes} onChange={setField('notes')} placeholder="Symptoms, treatment plan, or follow-up details" /></div>
+      </div>
+
+      <div className="form-section">
+        <h3 className="form-section-title">Auto-populate from</h3>
+        <div className="input-methods">
+          <div className="input-method">
+            <label>📱 Load from SMS</label>
+            <textarea rows="2" value={messageText} onChange={(e) => setMessageText(e.target.value)} placeholder="Paste medical info from messages..." className="message-textarea" />
+            <button type="button" onClick={importFromMessage} className="method-button">Extract from SMS</button>
+          </div>
+          <div className="input-method">
+            <label>📷 Scan with Camera</label>
+            <button type="button" onClick={() => openInput('Scan')} className="method-button">Open Camera</button>
+          </div>
+          <div className="input-method">
+            <label>📄 Upload Document</label>
+            <button type="button" onClick={() => openInput('Upload')} className="method-button">Choose File</button>
+          </div>
+        </div>
+      </div>
+
+      {attachments.length > 0 && (
+        <div className="form-section">
+          <h3 className="form-section-title">Attachments ({attachments.length})</h3>
+          <div className="attachments-list">
+            {attachments.map((att) => (
+              <div key={att.id} className="attachment-item">
+                <div className="attachment-info">
+                  <span className="attachment-icon">{getFileTypeIcon(att.type)}</span>
+                  <div className="attachment-details">
+                    <div className="attachment-name">{att.filename}</div>
+                    <div className="attachment-meta">{formatFileSize(att.size)} • {att.type}</div>
+                  </div>
+                </div>
+                <div className="attachment-actions">
+                  <button type="button" onClick={() => downloadAttachment(att)} className="attachment-action" title="Download"><ArrowUpRight size={16}/></button>
+                  <button type="button" onClick={() => removeAttachment(att.id)} className="attachment-action delete" title="Delete"><X size={16}/></button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="form-section">
+        <h3 className="form-section-title">Additional attachments</h3>
+        <button type="button" onClick={() => attachmentInputRef.current?.click()} className="add-attachment-button">+ Add attachment</button>
+      </div>
+    </div>
+
     <input ref={scanInputRef} className="hidden-file-input" type="file" accept="image/*" capture="environment" onChange={(event) => handleFileUpload(event, 'Scan')} />
     <input ref={uploadInputRef} className="hidden-file-input" type="file" accept=".pdf,image/*" onChange={(event) => handleFileUpload(event, 'Upload')} />
-    <div className="message-import-box">
-      <div className="field-group"><label htmlFor="message-import">Read from messages</label><textarea id="message-import" rows="3" value={messageText} onChange={(e) => setMessageText(e.target.value)} placeholder="Example: 'Hospital: Mercy Heart Center. Doctor: Dr. A. Nair. Paid $260 on Sep 03.'" /></div>
-      <button className="message-import-button" type="button" onClick={importFromMessage}>Auto-fill from message</button>
-    </div>
-    <div className="file-import-box">
-      <label className="file-import-label" htmlFor="document-upload">Upload PDF or image to auto-fill</label>
-      <input id="document-upload" type="file" accept=".pdf,image/*" onChange={(event) => handleFileUpload(event, 'Upload')} />
-    </div>
-    <div className="record-form">
-      <div className="field-group"><label htmlFor="record-title">Title</label><input id="record-title" value={form.title} onChange={setField('title')} placeholder="Annual checkup" /></div>
-      <div className="field-row">
-        <div className="field-group"><label htmlFor="visit-date">Visit date</label><input id="visit-date" type="date" value={form.visitDate} onChange={setField('visitDate')} /></div>
-        <div className="field-group"><label htmlFor="amount">Amount</label><input id="amount" type="number" min="0" step="0.01" value={form.amount} onChange={setField('amount')} placeholder="0.00" /></div>
-      </div>
-      <div className="field-group"><label htmlFor="hospital">Hospital / clinic</label><input id="hospital" value={form.hospital} onChange={setField('hospital')} placeholder="Memorial Hospital" /></div>
-      <div className="field-group"><label htmlFor="doctor">Doctor / provider</label><input id="doctor" value={form.doctor} onChange={setField('doctor')} placeholder="Dr. Maya Chen" /></div>
-      <div className="field-group"><label htmlFor="notes">Notes</label><textarea id="notes" rows="3" value={form.notes} onChange={setField('notes')} placeholder="Symptoms, treatment plan, or follow-up details" /></div>
-    </div>
+    <input ref={attachmentInputRef} className="hidden-file-input" type="file" onChange={handleAttachmentUpload} />
+
     <div className="sheet-actions"><button className="sheet-secondary" type="button" onClick={close}>Cancel</button><button className="auth-primary" type="button" onClick={saveRecord}>Save record <Check size={18}/></button></div>
-    <p className="sheet-security"><LockKeyhole size={14}/>Encrypted and private by design</p></div></div> }
+    <p className="sheet-security"><LockKeyhole size={14}/>Encrypted and private by design</p></div></div>;
+}
 
 createRoot(document.getElementById('root')).render(<App />);
