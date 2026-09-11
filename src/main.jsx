@@ -10,7 +10,7 @@ import {
 import './styles.css';
 import { auth, db, googleProvider } from './firebase';
 import { onAuthStateChanged, RecaptchaVerifier, signInWithPhoneNumber, signInWithPopup, signOut } from 'firebase/auth';
-import { addDoc, collection, deleteDoc, doc, getDocs, getDoc, setDoc } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, getDocs, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 
 const countryCodes = [
   ['India (+91)', '+91'],
@@ -160,6 +160,7 @@ function App() {
   const [showTimeline, setShowTimeline] = useState(false);
   const [timelineRecord, setTimelineRecord] = useState(null);
   const [recordDetail, setRecordDetail] = useState(null);
+  const [editingRecord, setEditingRecord] = useState(null);
   const [activePerson, setActivePerson] = useState('My profile');
   const [familyList, setFamilyList] = useState([]);
   const [profileDetails, setProfileDetails] = useState({
@@ -240,6 +241,15 @@ function App() {
     setTimeout(() => setShowNotice(false), 2800);
   };
 
+  const updateRecord = async (recordId, updates) => {
+    setItems(current => current.map(item => item.id === recordId ? { ...item, ...updates } : item));
+    if (currentUser) {
+      await updateDoc(doc(db, 'users', currentUser.uid, 'records', recordId), serializeRecord(updates)).catch(error => console.error('Could not update record', error));
+    }
+    setEditingRecord(null);
+    setRecordDetail(null);
+  };
+
   const saveProfile = async (details) => {
     const profileWithPrimary = { ...details, isPrimaryHolder: true };
     setProfileDetails(profileWithPrimary);
@@ -284,14 +294,14 @@ function App() {
       {showSearch && <SearchPanel searchTerm={searchTerm} setSearchTerm={setSearchTerm} submitSearch={() => { setShowSearch(false); setTab('Records'); }} chooseExample={(example) => { setSearchTerm(example); setShowSearch(false); setTab('Records'); }} />}
 
       <div className="content">
-        {tab === 'Home' && (showTimeline ? <TimelinePage items={items} selectedRecord={timelineRecord} onSelectRecord={setTimelineRecord} onBack={() => { setShowTimeline(false); setTimelineRecord(null); }} /> : recordDetail ? <RecordDetailPage record={recordDetail} onBack={() => setRecordDetail(null)} /> : <HomeScreen activePerson={activePerson} setActivePerson={setActivePerson} primaryMemberName={profileDetails.fullName} familyList={familyList} items={items} onAdd={() => setShowAdd(true)} onViewTimeline={() => setShowTimeline(true)} onOpenRecord={setRecordDetail} showNotifications={showNotifications} toggleNotifications={() => setShowNotifications(open => !open)} />)}
-        {tab === 'Records' && (recordDetail ? <RecordDetailPage record={recordDetail} onBack={() => setRecordDetail(null)} /> : <RecordsScreen items={items} searchTerm={searchTerm} setSearchTerm={setSearchTerm} onAdd={() => setShowAdd(true)} onOpenRecord={setRecordDetail} />)}
+        {tab === 'Home' && (showTimeline ? <TimelinePage items={items} selectedRecord={timelineRecord} onSelectRecord={setTimelineRecord} onBack={() => { setShowTimeline(false); setTimelineRecord(null); }} /> : recordDetail ? (editingRecord ? <EditRecordPage record={editingRecord} onBack={() => setEditingRecord(null)} onSave={(updates) => updateRecord(editingRecord.id, updates)} /> : <RecordDetailPage record={recordDetail} onEdit={() => setEditingRecord(recordDetail)} onBack={() => setRecordDetail(null)} />) : <HomeScreen activePerson={activePerson} setActivePerson={setActivePerson} primaryMemberName={profileDetails.fullName} familyList={familyList} items={items} onAdd={() => setShowAdd(true)} onViewTimeline={() => setShowTimeline(true)} onOpenRecord={setRecordDetail} showNotifications={showNotifications} toggleNotifications={() => setShowNotifications(open => !open)} />)}
+        {tab === 'Records' && (recordDetail ? (editingRecord ? <EditRecordPage record={editingRecord} onBack={() => setEditingRecord(null)} onSave={(updates) => updateRecord(editingRecord.id, updates)} /> : <RecordDetailPage record={recordDetail} onEdit={() => setEditingRecord(recordDetail)} onBack={() => setRecordDetail(null)} />) : <RecordsScreen items={items} searchTerm={searchTerm} setSearchTerm={setSearchTerm} onAdd={() => setShowAdd(true)} onOpenRecord={setRecordDetail} />)}
         {tab === 'Family' && (showAddFamily ? <AddFamilyMemberPage onBack={() => setShowAddFamily(false)} onSave={addFamilyMember} /> : editingMember ? <EditFamilyMemberPage member={editingMember} onBack={() => setEditingMember(null)} onSave={(updatedMember) => updateFamilyMember(updatedMember, editingMember.name)} onDelete={() => deleteFamilyMember(editingMember)} /> : <FamilyScreen activePerson={activePerson} setActivePerson={setActivePerson} primaryMemberName={profileDetails.fullName} familyList={familyList} onAddMember={() => setShowAddFamily(true)} onOpenMember={setEditingMember} />)}
         {tab === 'Profile' && (editProfile ? <EditProfilePage details={profileDetails} onBack={() => setEditProfile(false)} onSave={saveProfile} /> : settingsPage ? <SettingsPage page={settingsPage} activePerson={activePerson} familyList={familyList} items={items} onBack={() => setSettingsPage(null)} /> : <ProfileScreen activePerson={activePerson} profileDetails={profileDetails} onLogout={() => signOut(auth)} openSettings={setSettingsPage} openEditProfile={() => setEditProfile(true)} />)}
       </div>
 
       <nav className="bottom-nav">
-        {[['Home', Home], ['Records', FileText], ['Family', Users], ['Profile', Settings]].map(([label, Icon]) => <button key={label} onClick={() => { setSettingsPage(null); setEditProfile(false); setShowAddFamily(false); setEditingMember(null); setShowTimeline(false); setTimelineRecord(null); setRecordDetail(null); setTab(label); }} className={tab === label ? 'nav-active' : ''}><Icon size={20}/><span>{label}</span></button>)}
+        {[['Home', Home], ['Records', FileText], ['Family', Users], ['Profile', Settings]].map(([label, Icon]) => <button key={label} onClick={() => { setSettingsPage(null); setEditProfile(false); setShowAddFamily(false); setEditingMember(null); setShowTimeline(false); setTimelineRecord(null); setRecordDetail(null); setEditingRecord(null); setTab(label); }} className={tab === label ? 'nav-active' : ''}><Icon size={20}/><span>{label}</span></button>)}
       </nav>
 
       {showAdd && <AddSheet close={() => setShowAdd(false)} addRecord={addRecord} />}
@@ -476,6 +486,26 @@ function HomeScreen({ activePerson, setActivePerson, primaryMemberName, familyLi
   </>;
 }
 
+function EditRecordPage({ record, onBack, onSave }) {
+  const [form, setForm] = useState({
+    title: record.title,
+    hospital: record.hospital,
+    doctor: record.doctor,
+    amount: record.amount,
+    notes: record.notes,
+    visitDate: record.date,
+  });
+
+  const submit = (event) => {
+    event.preventDefault();
+    onSave({ ...form, date: form.visitDate });
+  };
+
+  const update = (field) => (event) => setForm(current => ({ ...current, [field]: event.target.value }));
+
+  return <div className="add-family-page"><button className="settings-back" onClick={onBack}><ArrowLeft size={18}/>Cancel</button><div className="add-family-heading"><span className={`record-icon ${record.tone}`}><Settings size={25}/></span><p className="eyebrow">EDIT RECORD</p><h1>Update health record</h1><p>Make changes to this record.</p></div><form className="family-form" onSubmit={submit}><label htmlFor="edit-record-title">RECORD TITLE</label><input id="edit-record-title" value={form.title} onChange={update('title')} placeholder="e.g. Blood work" required/><label htmlFor="edit-record-date">DATE OF VISIT</label><input id="edit-record-date" type="date" value={form.visitDate} onChange={update('visitDate')} /><label htmlFor="edit-record-hospital">HOSPITAL / CLINIC</label><input id="edit-record-hospital" value={form.hospital} onChange={update('hospital')} placeholder="e.g. Apollo Hospitals" /><label htmlFor="edit-record-doctor">DOCTOR / PROVIDER</label><input id="edit-record-doctor" value={form.doctor} onChange={update('doctor')} placeholder="e.g. Dr. Smith" /><label htmlFor="edit-record-amount">AMOUNT PAID</label><input id="edit-record-amount" value={form.amount} onChange={update('amount')} placeholder="e.g. $100" /><label htmlFor="edit-record-notes">NOTES</label><textarea id="edit-record-notes" value={form.notes} onChange={update('notes')} placeholder="Additional details about your visit..."/><button className="auth-primary" type="submit"><Check size={18}/>Save changes</button></form></div>;
+}
+
 function TimelinePage({ items, selectedRecord, onSelectRecord, onBack }) {
   const [selectedMonth, setSelectedMonth] = useState('All');
   const months = [...new Set(items.map(record => timelineDate(record).toLocaleString('en-US', { month: 'short' })))];
@@ -486,11 +516,11 @@ function TimelinePage({ items, selectedRecord, onSelectRecord, onBack }) {
   return <div className="timeline-page"><button className="settings-back" onClick={onBack}><ArrowLeft size={18}/>Back to home</button><div className="timeline-heading"><p className="eyebrow">YOUR HEALTH STORY</p><h1>Health timeline</h1><p>Move through your care history by month, then open any record for the full visit details.</p></div><div className="timeline-zoom" aria-label="Timeline month filter"><button className={selectedMonth === 'All' ? 'timeline-month active' : 'timeline-month'} onClick={() => setSelectedMonth('All')}>All</button>{months.map(month => <button className={selectedMonth === month ? 'timeline-month active' : 'timeline-month'} key={month} onClick={() => setSelectedMonth(month)}>{month}</button>)}</div><div className="visual-timeline">{visibleItems.length ? visibleItems.map((record, index) => { const date = timelineDate(record); const Icon = record.icon; return <button className="timeline-event" key={`${record.title}-${index}`} onClick={() => onSelectRecord(record)}><span className="timeline-line"/><span className="timeline-dot"/><span className="timeline-date"><b>{date.toLocaleString('en-US', { month: 'short' })}</b><small>{date.getDate()}</small></span><span className="timeline-event-card"><span className={`record-icon ${record.tone}`}><Icon size={17}/></span><span><b>{record.title}</b><small>{record.source}</small></span><ChevronRight size={16}/></span></button>; }) : <div className="empty-search">No records in this month yet.</div>}</div></div>;
 }
 
-function RecordDetailPage({ record, onBack }) {
+function RecordDetailPage({ record, onBack, onEdit }) {
   const date = timelineDate(record);
   const Icon = record.icon;
 
-  return <div className="record-detail-page"><button className="settings-back" onClick={onBack}><ArrowLeft size={18}/>Back to timeline</button><div className="record-detail-heading"><span className={`record-icon ${record.tone}`}><Icon size={22}/></span><p className="eyebrow">HEALTH RECORD</p><h1>{record.title}</h1><span>{date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span></div><div className="record-detail-card"><DetailField label="Hospital / clinic" value={record.hospital || record.source}/><DetailField label="Doctor / provider" value={record.doctor || 'Not provided'}/><DetailField label="Amount" value={record.amount || 'Not provided'}/><DetailField label="Notes" value={record.notes || 'No notes added'}/></div></div>;
+  return <div className="record-detail-page"><button className="settings-back" onClick={onBack}><ArrowLeft size={18}/>Back to timeline</button><div className="record-detail-heading"><span className={`record-icon ${record.tone}`}><Icon size={22}/></span><p className="eyebrow">HEALTH RECORD</p><h1>{record.title}</h1><span>{date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span></div><div className="record-detail-card"><DetailField label="Hospital / clinic" value={record.hospital || record.source}/><DetailField label="Doctor / provider" value={record.doctor || 'Not provided'}/><DetailField label="Amount" value={record.amount || 'Not provided'}/><DetailField label="Notes" value={record.notes || 'No notes added'}/></div>{onEdit && <button className="edit-record-button" onClick={onEdit}><Settings size={17}/>Edit record</button>}</div>;
 }
 
 function DetailField({ label, value }) { return <div className="detail-field"><p>{label}</p><b>{value}</b></div>; }
