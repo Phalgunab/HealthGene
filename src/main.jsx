@@ -878,7 +878,52 @@ function RecordDetailPage({ record, onBack, onEdit }) {
   const date = timelineDate(record);
   const Icon = record.icon;
 
-  return <div className="record-detail-page"><button className="settings-back" onClick={onBack}><ArrowLeft size={18}/>Back to timeline</button><div className="record-detail-heading"><span className={`record-icon ${record.tone}`}><Icon size={22}/></span><p className="eyebrow">HEALTH RECORD</p><h1>{record.title}</h1><span>{date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span></div><div className="record-detail-card"><DetailField label="Hospital / clinic" value={record.hospital || record.source}/><DetailField label="Doctor / provider" value={record.doctor || 'Not provided'}/><DetailField label="Amount" value={record.amount || 'Not provided'}/><DetailField label="Notes" value={record.notes || 'No notes added'}/></div>{onEdit && <button className="edit-record-button" onClick={onEdit}><Settings size={17}/>Edit record</button>}</div>;
+  const downloadAttachment = (attachment) => {
+    const link = document.createElement('a');
+    link.href = attachment.data;
+    link.download = attachment.filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const getFileTypeIcon = (type) => {
+    if (type.startsWith('image/')) return '🖼️';
+    if (type === 'application/pdf') return '📄';
+    return '📎';
+  };
+
+  const formatFileSize = (bytes) => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+  };
+
+  const attachments = record.attachments || [];
+
+  return <div className="record-detail-page"><button className="settings-back" onClick={onBack}><ArrowLeft size={18}/>Back to timeline</button><div className="record-detail-heading"><span className={`record-icon ${record.tone}`}><Icon size={22}/></span><p className="eyebrow">HEALTH RECORD</p><h1>{record.title}</h1><span>{date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span></div><div className="record-detail-card"><DetailField label="Hospital / clinic" value={record.hospital || record.source}/><DetailField label="Doctor / provider" value={record.doctor || 'Not provided'}/><DetailField label="Amount" value={record.amount || 'Not provided'}/><DetailField label="Notes" value={record.notes || 'No notes added'}/></div>{attachments.length > 0 && (
+    <div className="record-detail-attachments">
+      <h3>Attachments ({attachments.length})</h3>
+      <div className="attachments-list detail-attachments">
+        {attachments.map((att) => (
+          <div key={att.id} className="attachment-item detail-attachment">
+            <div className="attachment-info">
+              <span className="attachment-icon">{getFileTypeIcon(att.type)}</span>
+              <div className="attachment-details">
+                <div className="attachment-name">{att.filename}</div>
+                <div className="attachment-meta">{formatFileSize(att.size)} • {att.type}</div>
+              </div>
+            </div>
+            <button type="button" onClick={() => downloadAttachment(att)} className="download-attachment-button" title="Download">
+              <ArrowUpRight size={16}/>Download
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  )}{onEdit && <button className="edit-record-button" onClick={onEdit}><Settings size={17}/>Edit record</button>}</div>;
 }
 
 function DetailField({ label, value }) { return <div className="detail-field"><p>{label}</p><b>{value}</b></div>; }
