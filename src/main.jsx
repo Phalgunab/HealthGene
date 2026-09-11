@@ -146,6 +146,7 @@ function App() {
   const [showAdd, setShowAdd] = useState(false);
   const [showNotice, setShowNotice] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showReadNotifications, setShowReadNotifications] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [settingsPage, setSettingsPage] = useState(null);
@@ -381,7 +382,7 @@ function App() {
       {showSearch && <SearchPanel searchTerm={searchTerm} setSearchTerm={setSearchTerm} submitSearch={() => { setShowSearch(false); setTab('Records'); }} chooseExample={(example) => { setSearchTerm(example); setShowSearch(false); setTab('Records'); }} />}
 
       <div className="content">
-        {tab === 'Home' && (showTimeline ? (editingRecord ? <EditRecordPage record={editingRecord} onBack={() => setEditingRecord(null)} onSave={(updates) => updateRecord(editingRecord.id, updates)} /> : <TimelinePage items={items} selectedRecord={timelineRecord} onSelectRecord={setTimelineRecord} onEdit={() => setEditingRecord(timelineRecord)} onBack={() => { setShowTimeline(false); setTimelineRecord(null); }} />) : recordDetail ? (editingRecord ? <EditRecordPage record={editingRecord} onBack={() => setEditingRecord(null)} onSave={(updates) => updateRecord(editingRecord.id, updates)} /> : <RecordDetailPage record={recordDetail} onEdit={() => setEditingRecord(recordDetail)} onBack={() => setRecordDetail(null)} />) : <HomeScreen activePerson={activePerson} setActivePerson={setActivePerson} primaryMemberName={profileDetails.fullName} familyList={familyList} items={items} notifications={notifications} onMarkNotificationAsRead={markNotificationAsRead} onAdd={() => setShowAdd(true)} onViewTimeline={() => setShowTimeline(true)} onOpenRecord={setRecordDetail} showNotifications={showNotifications} toggleNotifications={() => setShowNotifications(open => !open)} />)}
+        {tab === 'Home' && (showTimeline ? (editingRecord ? <EditRecordPage record={editingRecord} onBack={() => setEditingRecord(null)} onSave={(updates) => updateRecord(editingRecord.id, updates)} /> : <TimelinePage items={items} selectedRecord={timelineRecord} onSelectRecord={setTimelineRecord} onEdit={() => setEditingRecord(timelineRecord)} onBack={() => { setShowTimeline(false); setTimelineRecord(null); }} />) : recordDetail ? (editingRecord ? <EditRecordPage record={editingRecord} onBack={() => setEditingRecord(null)} onSave={(updates) => updateRecord(editingRecord.id, updates)} /> : <RecordDetailPage record={recordDetail} onEdit={() => setEditingRecord(recordDetail)} onBack={() => setRecordDetail(null)} />) : <HomeScreen activePerson={activePerson} setActivePerson={setActivePerson} primaryMemberName={profileDetails.fullName} familyList={familyList} items={items} notifications={notifications} onMarkNotificationAsRead={markNotificationAsRead} onAdd={() => setShowAdd(true)} onViewTimeline={() => setShowTimeline(true)} onOpenRecord={setRecordDetail} showNotifications={showNotifications} showReadNotifications={showReadNotifications} setShowReadNotifications={setShowReadNotifications} toggleNotifications={() => setShowNotifications(open => !open)} />)}
         {tab === 'Records' && (recordDetail ? (editingRecord ? <EditRecordPage record={editingRecord} onBack={() => setEditingRecord(null)} onSave={(updates) => updateRecord(editingRecord.id, updates)} /> : <RecordDetailPage record={recordDetail} onEdit={() => setEditingRecord(recordDetail)} onBack={() => setRecordDetail(null)} />) : <RecordsScreen items={items} searchTerm={searchTerm} setSearchTerm={setSearchTerm} onAdd={() => setShowAdd(true)} onOpenRecord={setRecordDetail} />)}
         {tab === 'Family' && (showAddFamily ? <AddFamilyMemberPage onBack={() => setShowAddFamily(false)} onSave={addFamilyMember} /> : editingMember ? <EditFamilyMemberPage member={editingMember} onBack={() => setEditingMember(null)} onSave={(updatedMember) => updateFamilyMember(updatedMember, editingMember.name)} onDelete={() => deleteFamilyMember(editingMember)} /> : <FamilyScreen activePerson={activePerson} setActivePerson={setActivePerson} primaryMemberName={profileDetails.fullName} familyList={familyList} onAddMember={() => setShowAddFamily(true)} onOpenMember={setEditingMember} />)}
         {tab === 'Profile' && (editProfile ? <EditProfilePage details={profileDetails} onBack={() => setEditProfile(false)} onSave={saveProfile} /> : settingsPage ? <SettingsPage page={settingsPage} activePerson={activePerson} familyList={familyList} items={items} onBack={() => setSettingsPage(null)} /> : <ProfileScreen activePerson={activePerson} profileDetails={profileDetails} onLogout={() => signOut(auth)} openSettings={setSettingsPage} openEditProfile={() => setEditProfile(true)} />)}
@@ -493,11 +494,20 @@ function AuthScreen() {
 
 function AuthBrand({ compact = false }) { return <div className={`auth-brand ${compact ? 'compact' : ''}`}><div className="brand"><span className="brand-mark"><HeartPulse size={17}/></span><span>MyFamilyHealth</span></div>{!compact && <span>MyFamilyHealth v1.0</span>}</div> }
 
-function NotificationPanel({ notifications, onMarkAsRead }) {
+function NotificationPanel({ notifications, onMarkAsRead, showRead, setShowRead }) {
   const unreadNotifications = notifications.filter(notif => notif.unread).slice(0, 3);
+  const readNotifications = notifications.filter(notif => !notif.unread);
+  const displayedNotifications = showRead ? readNotifications : unreadNotifications;
+  const unreadCount = notifications.filter(notification => notification.unread).length;
+  const readCount = readNotifications.length;
+  
   return <section className="notification-panel" aria-label="Notifications">
-    <div className="notification-heading"><div><p className="eyebrow">YOUR UPDATES</p><h2>Notifications</h2></div><span>{notifications.filter(notification => notification.unread).length} unread</span></div>
-    <div className="notification-list">{unreadNotifications.length > 0 ? unreadNotifications.map(notification => <article className="notification-item notification-unread" key={notification.id} role="button" onClick={() => onMarkAsRead(notification.id)} style={{ cursor: 'pointer' }}><span className="notification-icon"><Bell size={15}/></span><div><h3>{notification.title}</h3><p>{notification.detail}</p><small>{notification.time}</small></div><i aria-label="Unread"/></article>) : <div style={{ padding: '20px', textAlign: 'center', color: '#999' }}>No unread notifications</div>}</div>
+    <div className="notification-heading"><div><p className="eyebrow">YOUR UPDATES</p><h2>Notifications</h2></div><span>{showRead ? `${readCount} read` : `${unreadCount} unread`}</span></div>
+    <div className="notification-tabs" style={{ display: 'flex', gap: '8px', marginBottom: '12px', paddingBottom: '10px', borderBottom: '1px solid #edf2ee' }}>
+      <button onClick={() => setShowRead(false)} style={{ flex: 1, padding: '8px', borderRadius: '8px', border: 'none', background: !showRead ? '#287368' : '#f0f4f1', color: !showRead ? '#fff' : '#287368', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}>Unread ({unreadCount})</button>
+      <button onClick={() => setShowRead(true)} style={{ flex: 1, padding: '8px', borderRadius: '8px', border: 'none', background: showRead ? '#287368' : '#f0f4f1', color: showRead ? '#fff' : '#287368', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}>Read ({readCount})</button>
+    </div>
+    <div className="notification-list">{displayedNotifications.length > 0 ? displayedNotifications.map(notification => <article className={`notification-item ${!showRead ? 'notification-unread' : 'notification-read'}`} key={notification.id} role="button" onClick={() => !showRead && onMarkAsRead(notification.id)} style={{ cursor: !showRead ? 'pointer' : 'default' }}><span className="notification-icon"><Bell size={15}/></span><div><h3>{notification.title}</h3><p>{notification.detail}</p><small>{notification.time}</small></div>{!showRead && <i aria-label="Unread"/>}</article>) : <div style={{ padding: '20px', textAlign: 'center', color: '#999' }}>{showRead ? 'No read notifications' : 'No unread notifications'}</div>}</div>
   </section>;
 }
 
@@ -531,7 +541,7 @@ function LegalDialog({ page, close }) {
   </div>;
 }
 
-function HomeScreen({ activePerson, setActivePerson, primaryMemberName, familyList, items, notifications, onMarkNotificationAsRead, onAdd, onViewTimeline, onOpenRecord, showNotifications, toggleNotifications }) {
+function HomeScreen({ activePerson, setActivePerson, primaryMemberName, familyList, items, notifications, onMarkNotificationAsRead, onAdd, onViewTimeline, onOpenRecord, showNotifications, showReadNotifications, setShowReadNotifications, toggleNotifications }) {
   const [personMenuOpen, setPersonMenuOpen] = useState(false);
   const firstName = (activePerson || 'there').split(' ')[0];
   const initials = activePerson ? activePerson.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase() : '?';
@@ -548,7 +558,7 @@ function HomeScreen({ activePerson, setActivePerson, primaryMemberName, familyLi
 
   return <>
     <div className="hello-row"><div><p className="eyebrow">{dateHeader}</p><h1>Good morning, {firstName}</h1></div><button className="bell" onClick={toggleNotifications} aria-label="Notifications" aria-expanded={showNotifications}><Bell size={19}/><i/><span className="notification-count">{notifications?.filter(notification => notification.unread)?.length || 0}</span></button></div>
-    {showNotifications && <NotificationPanel notifications={notifications || []} onMarkAsRead={onMarkNotificationAsRead} />}
+    {showNotifications && <NotificationPanel notifications={notifications || []} onMarkAsRead={onMarkNotificationAsRead} showRead={showReadNotifications} setShowRead={setShowReadNotifications} />}
     <div className={`person-select ${personMenuOpen ? 'person-open' : ''}`}>
       <button className="person-picker" onClick={() => setPersonMenuOpen(open => !open)} aria-expanded={personMenuOpen}><span className="person-mini">{initials}</span><span><b>{activePerson || 'No profile yet'}</b><small>{isPrimaryHolderActive ? 'Personal health space' : 'Family member'}</small></span><ChevronDown size={18}/></button>
       {personMenuOpen && <div className="person-menu" role="listbox">{primaryMemberName && <button className={activePerson === primaryMemberName ? 'person-option selected' : 'person-option'} type="button" role="option" aria-selected={activePerson === primaryMemberName} key={`primary-${primaryMemberName}`} onClick={() => { setActivePerson(primaryMemberName); setPersonMenuOpen(false); }}><span className="person-mini">{primaryMemberName.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase()}</span><span><b>{primaryMemberName}</b><small>Personal health space</small></span>{activePerson === primaryMemberName && <Check size={16}/>}</button>}{familyList.map(member => { const memberInitials = member.name.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase(); return <button className={activePerson === member.name ? 'person-option selected' : 'person-option'} type="button" role="option" aria-selected={activePerson === member.name} key={member.id || member.name} onClick={() => { setActivePerson(member.name); setPersonMenuOpen(false); }}><span className="person-mini">{memberInitials}</span><span><b>{member.name}</b><small>{member.relationship || 'Family member'}</small></span>{activePerson === member.name && <Check size={16}/>}</button>; })}</div>}
