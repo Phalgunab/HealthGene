@@ -1265,7 +1265,24 @@ function AddHealthRecordPage({ close, addRecord, primaryMemberName, familyList }
       visitDate: parsed.visitDate || current.visitDate,
       notes: parsed.notes || current.notes,
     }));
+    
+    // Add SMS content as text attachment
+    addTextAttachment(messageText, 'sms-message.txt');
     setMessageText('');
+  };
+
+  const addTextAttachment = (text, filename = 'sms-message.txt') => {
+    if (!text || text.trim().length === 0) return;
+    
+    const attachment = {
+      id: Math.random().toString(36).substr(2, 9),
+      filename,
+      type: 'text/plain',
+      size: new Blob([text]).size,
+      uploadedAt: new Date().toISOString(),
+      data: `data:text/plain;base64,${btoa(text)}`,
+    };
+    setAttachments([...attachments, attachment]);
   };
 
   const addAttachment = async (file) => {
@@ -1330,6 +1347,10 @@ function AddHealthRecordPage({ close, addRecord, primaryMemberName, familyList }
     setRecordType(type);
     setForm((current) => ({ ...current, type }));
     await handleUploadedDocument(file, setForm);
+    
+    // Add the uploaded/scanned document as an attachment
+    await addAttachment(file);
+    
     event.target.value = '';
   };
 
