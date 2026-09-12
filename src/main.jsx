@@ -1364,24 +1364,20 @@ function AddHealthRecordPage({ close, addRecord, primaryMemberName, familyList }
         </div>
       </div>
 
-      <div className="form-section">
-        <h3 className="form-section-title">Record details</h3>
-        <div className="field-group"><label htmlFor="record-title">Title</label><input id="record-title" value={form.title} onChange={setField('title')} placeholder="Annual checkup" /></div>
-        <div className="field-row">
-          <div className="field-group"><label htmlFor="visit-date">Visit date</label><input id="visit-date" type="date" value={form.visitDate} onChange={setField('visitDate')} /></div>
-          <div className="field-group"><label htmlFor="amount">Amount</label><input id="amount" type="number" min="0" step="0.01" value={form.amount} onChange={setField('amount')} placeholder="0.00" /></div>
+      <div className="form-section auto-populate-section-bg">
+        <div className="auto-populate-header-bar">
+          <h3 className="auto-populate-title">Auto-populate from</h3>
         </div>
-        <div className="field-group"><label htmlFor="hospital">Hospital / clinic</label><input id="hospital" value={form.hospital} onChange={setField('hospital')} placeholder="Memorial Hospital" /></div>
-        <div className="field-group"><label htmlFor="doctor">Doctor / provider</label><input id="doctor" value={form.doctor} onChange={setField('doctor')} placeholder="Dr. Maya Chen" /></div>
-        <div className="field-group"><label htmlFor="notes">Notes</label><textarea id="notes" rows="3" value={form.notes} onChange={setField('notes')} placeholder="Symptoms, treatment plan, or follow-up details" /></div>
-      </div>
-
-      <div className="form-section">
-        <h3 className="form-section-title">Auto-populate from</h3>
-        <div className="auto-populate-header">
-          <button type="button" className={`auto-populate-tab ${selectedAutoPopulateOption === 'sms' ? 'active' : ''}`} onClick={() => setSelectedAutoPopulateOption('sms')}>Load from SMS</button>
-          <button type="button" className={`auto-populate-tab ${selectedAutoPopulateOption === 'camera' ? 'active' : ''}`} onClick={() => setSelectedAutoPopulateOption('camera')}>Scan with Camera</button>
-          <button type="button" className={`auto-populate-tab ${selectedAutoPopulateOption === 'upload' ? 'active' : ''}`} onClick={() => setSelectedAutoPopulateOption('upload')}>Upload Document</button>
+        <div className="auto-populate-columns">
+          <button type="button" className={`auto-populate-column ${selectedAutoPopulateOption === 'sms' ? 'active' : ''}`} onClick={() => setSelectedAutoPopulateOption('sms')}>
+            <span className="column-label">Load from SMS</span>
+          </button>
+          <button type="button" className={`auto-populate-column ${selectedAutoPopulateOption === 'camera' ? 'active' : ''}`} onClick={() => setSelectedAutoPopulateOption('camera')}>
+            <span className="column-label">Scan with Camera</span>
+          </button>
+          <button type="button" className={`auto-populate-column ${selectedAutoPopulateOption === 'upload' ? 'active' : ''}`} onClick={() => setSelectedAutoPopulateOption('upload')}>
+            <span className="column-label">Upload Document</span>
+          </button>
         </div>
         <div className="auto-populate-content">
           {selectedAutoPopulateOption === 'sms' && (
@@ -1401,6 +1397,18 @@ function AddHealthRecordPage({ close, addRecord, primaryMemberName, familyList }
             </div>
           )}
         </div>
+      </div>
+
+      <div className="form-section">
+        <h3 className="form-section-title">Record details</h3>
+        <div className="field-group"><label htmlFor="record-title">Title</label><input id="record-title" value={form.title} onChange={setField('title')} placeholder="Annual checkup" /></div>
+        <div className="field-row">
+          <div className="field-group"><label htmlFor="visit-date">Visit date</label><input id="visit-date" type="date" value={form.visitDate} onChange={setField('visitDate')} /></div>
+          <div className="field-group"><label htmlFor="amount">Amount</label><input id="amount" type="number" min="0" step="0.01" value={form.amount} onChange={setField('amount')} placeholder="0.00" /></div>
+        </div>
+        <div className="field-group"><label htmlFor="hospital">Hospital / clinic</label><input id="hospital" value={form.hospital} onChange={setField('hospital')} placeholder="Memorial Hospital" /></div>
+        <div className="field-group"><label htmlFor="doctor">Doctor / provider</label><input id="doctor" value={form.doctor} onChange={setField('doctor')} placeholder="Dr. Maya Chen" /></div>
+        <div className="field-group"><label htmlFor="notes">Notes</label><textarea id="notes" rows="3" value={form.notes} onChange={setField('notes')} placeholder="Symptoms, treatment plan, or follow-up details" /></div>
       </div>
 
       {attachments.length > 0 && (

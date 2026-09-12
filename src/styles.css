@@ -34,12 +34,16 @@
 .form-section-title{margin:0;color:#183837;font-size:13px;font-weight:700;letter-spacing:0.5px}
 .family-select{width:100%;height:50px;padding:0 13px;border:1px solid #dce5de;border-radius:14px;outline:0;color:#294d46;background:#fff;font:inherit;font-size:13px;cursor:pointer}
 .family-select:focus{border-color:#75a99b;box-shadow:0 0 0 3px rgba(91,151,133,.12)}
-.auto-populate-header{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px}
-.auto-populate-tab{padding:10px;border:1px solid #dce5de;border-radius:10px;color:#527169;background:#fff;font-size:11px;font-weight:600;cursor:pointer;transition:all .2s ease}
-.auto-populate-tab:hover{border-color:#287368;color:#287368;background:#eaf6f1}
-.auto-populate-tab.active{border-color:#287368;color:#fff;background:#287368;font-weight:700}
+.auto-populate-section-bg{padding:14px;border:1px solid #dce5de;border-radius:12px;background:#f8fdfb}
+.auto-populate-header-bar{display:flex;align-items:center;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #dce5de}
+.auto-populate-title{margin:0;color:#183837;font-size:13px;font-weight:700;letter-spacing:0.5px}
+.auto-populate-columns{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px}
+.auto-populate-column{padding:10px;border:1px solid #dce5de;border-radius:10px;color:#527169;background:#fff;font-size:11px;font-weight:600;cursor:pointer;transition:all .2s ease;text-align:center}
+.auto-populate-column:hover{border-color:#287368;color:#287368;background:#eaf6f1}
+.auto-populate-column.active{border-color:#287368;color:#fff;background:#287368;font-weight:700}
+.column-label{display:block}
 .auto-populate-content{display:grid}
-.auto-populate-section{display:grid;gap:8px}
+.auto-populate-section{display:grid;gap:8px;padding:12px;border:1px solid #dce5de;border-radius:10px;background:#fff}
 .input-methods{display:grid;gap:12px}
 .input-method{display:grid;gap:8px;padding:12px;border:1px solid #e1ebe5;border-radius:12px;background:#f8fdfb}
 .input-method>label{color:#294d46;font-size:11px;font-weight:700}
