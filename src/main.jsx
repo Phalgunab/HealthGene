@@ -1099,6 +1099,7 @@ function AddHealthRecordPage({ close, addRecord, primaryMemberName, familyList }
   const [messageText, setMessageText] = useState('');
   const [attachments, setAttachments] = useState([]);
   const [showMissingFamilyError, setShowMissingFamilyError] = useState(false);
+  const [selectedAutoPopulateOption, setSelectedAutoPopulateOption] = useState('sms');
   const scanInputRef = useRef(null);
   const uploadInputRef = useRef(null);
   const attachmentInputRef = useRef(null);
@@ -1250,20 +1251,28 @@ function AddHealthRecordPage({ close, addRecord, primaryMemberName, familyList }
 
       <div className="form-section">
         <h3 className="form-section-title">Auto-populate from</h3>
-        <div className="input-methods">
-          <div className="input-method">
-            <label>📱 Load from SMS</label>
-            <textarea rows="2" value={messageText} onChange={(e) => setMessageText(e.target.value)} placeholder="Paste medical info from messages..." className="message-textarea" />
-            <button type="button" onClick={importFromMessage} className="method-button">Extract from SMS</button>
-          </div>
-          <div className="input-method">
-            <label>📷 Scan with Camera</label>
-            <button type="button" onClick={() => openInput('Scan')} className="method-button">Open Camera</button>
-          </div>
-          <div className="input-method">
-            <label>📄 Upload Document</label>
-            <button type="button" onClick={() => openInput('Upload')} className="method-button">Choose File</button>
-          </div>
+        <div className="auto-populate-header">
+          <button type="button" className={`auto-populate-tab ${selectedAutoPopulateOption === 'sms' ? 'active' : ''}`} onClick={() => setSelectedAutoPopulateOption('sms')}>📱 Load from SMS</button>
+          <button type="button" className={`auto-populate-tab ${selectedAutoPopulateOption === 'camera' ? 'active' : ''}`} onClick={() => setSelectedAutoPopulateOption('camera')}>📷 Scan with Camera</button>
+          <button type="button" className={`auto-populate-tab ${selectedAutoPopulateOption === 'upload' ? 'active' : ''}`} onClick={() => setSelectedAutoPopulateOption('upload')}>📄 Upload Document</button>
+        </div>
+        <div className="auto-populate-content">
+          {selectedAutoPopulateOption === 'sms' && (
+            <div className="auto-populate-section">
+              <textarea rows="2" value={messageText} onChange={(e) => setMessageText(e.target.value)} placeholder="Paste medical info from messages..." className="message-textarea" />
+              <button type="button" onClick={importFromMessage} className="method-button">Extract from SMS</button>
+            </div>
+          )}
+          {selectedAutoPopulateOption === 'camera' && (
+            <div className="auto-populate-section">
+              <button type="button" onClick={() => openInput('Scan')} className="method-button">Open Camera</button>
+            </div>
+          )}
+          {selectedAutoPopulateOption === 'upload' && (
+            <div className="auto-populate-section">
+              <button type="button" onClick={() => openInput('Upload')} className="method-button">Choose File</button>
+            </div>
+          )}
         </div>
       </div>
 
