@@ -423,6 +423,22 @@ function App() {
     setEditingRecord(null);
   };
 
+  const deleteRecord = async (recordId) => {
+    // Remove from items state
+    setItems(current => current.filter(item => item.id !== recordId));
+    
+    // Close detail and editing views
+    setRecordDetail(null);
+    setEditingRecord(null);
+    setTimelineRecord(null);
+    
+    // Delete from Firestore
+    if (currentUser) {
+      await deleteDoc(doc(db, 'users', currentUser.uid, 'records', recordId)).catch(error => console.error('Could not delete record', error));
+      await addNotification('Record deleted', 'The health record has been permanently removed.');
+    }
+  };
+
   const saveProfile = async (details) => {
     const profileWithPrimary = { ...details, isPrimaryHolder: true };
     setProfileDetails(profileWithPrimary);
@@ -470,8 +486,8 @@ function App() {
       {showSearch && <SearchPanel searchTerm={searchTerm} setSearchTerm={setSearchTerm} submitSearch={() => { setShowSearch(false); setTab('Records'); }} chooseExample={(example) => { setSearchTerm(example); setShowSearch(false); setTab('Records'); }} />}
 
       <div className="content">
-        {tab === 'Home' && (showTimeline ? (editingRecord ? <EditRecordPage record={editingRecord} onBack={() => setEditingRecord(null)} onSave={(updates) => updateRecord(editingRecord.id, updates)} primaryMemberName={profileDetails.fullName} familyList={familyList} /> : <TimelinePage items={items} selectedRecord={timelineRecord} onSelectRecord={setTimelineRecord} onEdit={() => setEditingRecord(timelineRecord)} onBack={() => { setShowTimeline(false); setTimelineRecord(null); }} activePerson={activePerson} primaryMemberName={profileDetails.fullName} />) : recordDetail ? (editingRecord ? <EditRecordPage record={editingRecord} onBack={() => setEditingRecord(null)} onSave={(updates) => updateRecord(editingRecord.id, updates)} primaryMemberName={profileDetails.fullName} familyList={familyList} /> : <RecordDetailPage record={recordDetail} onEdit={() => setEditingRecord(recordDetail)} onBack={() => setRecordDetail(null)} />) : <HomeScreen activePerson={activePerson} setActivePerson={setActivePerson} primaryMemberName={profileDetails.fullName} familyList={familyList} items={items} notifications={notifications} onMarkNotificationAsRead={markNotificationAsRead} onAdd={() => setShowAdd(true)} onViewTimeline={() => setShowTimeline(true)} onOpenRecord={setRecordDetail} showNotifications={showNotifications} showReadNotifications={showReadNotifications} setShowReadNotifications={setShowReadNotifications} unreadNotificationPage={unreadNotificationPage} setUnreadNotificationPage={setUnreadNotificationPage} readNotificationPage={readNotificationPage} setReadNotificationPage={setReadNotificationPage} toggleNotifications={() => setShowNotifications(open => !open)} />)}
-        {tab === 'Records' && (recordDetail ? (editingRecord ? <EditRecordPage record={editingRecord} onBack={() => setEditingRecord(null)} onSave={(updates) => updateRecord(editingRecord.id, updates)} primaryMemberName={profileDetails.fullName} familyList={familyList} /> : <RecordDetailPage record={recordDetail} onEdit={() => setEditingRecord(recordDetail)} onBack={() => setRecordDetail(null)} />) : <RecordsScreen items={items} searchTerm={searchTerm} setSearchTerm={setSearchTerm} onAdd={() => setShowAdd(true)} onOpenRecord={setRecordDetail} activePerson={activePerson} primaryMemberName={profileDetails.fullName} />)}
+        {tab === 'Home' && (showTimeline ? (editingRecord ? <EditRecordPage record={editingRecord} onBack={() => setEditingRecord(null)} onSave={(updates) => updateRecord(editingRecord.id, updates)} primaryMemberName={profileDetails.fullName} familyList={familyList} /> : <TimelinePage items={items} selectedRecord={timelineRecord} onSelectRecord={setTimelineRecord} onEdit={() => setEditingRecord(timelineRecord)} onDelete={deleteRecord} onBack={() => { setShowTimeline(false); setTimelineRecord(null); }} activePerson={activePerson} primaryMemberName={profileDetails.fullName} />) : recordDetail ? (editingRecord ? <EditRecordPage record={editingRecord} onBack={() => setEditingRecord(null)} onSave={(updates) => updateRecord(editingRecord.id, updates)} primaryMemberName={profileDetails.fullName} familyList={familyList} /> : <RecordDetailPage record={recordDetail} onEdit={() => setEditingRecord(recordDetail)} onDelete={deleteRecord} onBack={() => setRecordDetail(null)} />) : <HomeScreen activePerson={activePerson} setActivePerson={setActivePerson} primaryMemberName={profileDetails.fullName} familyList={familyList} items={items} notifications={notifications} onMarkNotificationAsRead={markNotificationAsRead} onAdd={() => setShowAdd(true)} onViewTimeline={() => setShowTimeline(true)} onOpenRecord={setRecordDetail} showNotifications={showNotifications} showReadNotifications={showReadNotifications} setShowReadNotifications={setShowReadNotifications} unreadNotificationPage={unreadNotificationPage} setUnreadNotificationPage={setUnreadNotificationPage} readNotificationPage={readNotificationPage} setReadNotificationPage={setReadNotificationPage} toggleNotifications={() => setShowNotifications(open => !open)} />)}
+        {tab === 'Records' && (recordDetail ? (editingRecord ? <EditRecordPage record={editingRecord} onBack={() => setEditingRecord(null)} onSave={(updates) => updateRecord(editingRecord.id, updates)} primaryMemberName={profileDetails.fullName} familyList={familyList} /> : <RecordDetailPage record={recordDetail} onEdit={() => setEditingRecord(recordDetail)} onDelete={deleteRecord} onBack={() => setRecordDetail(null)} />) : <RecordsScreen items={items} searchTerm={searchTerm} setSearchTerm={setSearchTerm} onAdd={() => setShowAdd(true)} onOpenRecord={setRecordDetail} activePerson={activePerson} primaryMemberName={profileDetails.fullName} />)}
         {tab === 'Family' && (showAddFamily ? <AddFamilyMemberPage onBack={() => setShowAddFamily(false)} onSave={addFamilyMember} /> : editingMember ? <EditFamilyMemberPage member={editingMember} onBack={() => setEditingMember(null)} onSave={(updatedMember) => updateFamilyMember(updatedMember, editingMember.name)} onDelete={() => deleteFamilyMember(editingMember)} /> : <FamilyScreen activePerson={activePerson} setActivePerson={setActivePerson} primaryMemberName={profileDetails.fullName} familyList={familyList} onAddMember={() => setShowAddFamily(true)} onOpenMember={setEditingMember} />)}
         {tab === 'Profile' && (editProfile ? <EditProfilePage details={profileDetails} onBack={() => setEditProfile(false)} onSave={saveProfile} /> : settingsPage ? <SettingsPage page={settingsPage} activePerson={activePerson} familyList={familyList} items={items} onBack={() => setSettingsPage(null)} /> : <ProfileScreen activePerson={activePerson} profileDetails={profileDetails} onLogout={() => signOut(auth)} openSettings={setSettingsPage} openEditProfile={() => setEditProfile(true)} />)}
       </div>
@@ -894,7 +910,7 @@ function EditRecordPage({ record, onBack, onSave, primaryMemberName, familyList 
   </form></div>;
 }
 
-function TimelinePage({ items, selectedRecord, onSelectRecord, onEdit, onBack, activePerson, primaryMemberName }) {
+function TimelinePage({ items, selectedRecord, onSelectRecord, onEdit, onDelete, onBack, activePerson, primaryMemberName }) {
   const [selectedMonth, setSelectedMonth] = useState('All');
   
   // Filter items to show only records belonging to the active person
@@ -908,14 +924,15 @@ function TimelinePage({ items, selectedRecord, onSelectRecord, onEdit, onBack, a
   const visibleItems = filteredByPerson.filter(record => selectedMonth === 'All' || timelineDate(record).toLocaleString('en-US', { month: 'short' }) === selectedMonth).sort((a, b) => timelineDate(b) - timelineDate(a));
   const displayName = activePerson === primaryMemberName ? 'Your' : `${activePerson}'s`;
 
-  if (selectedRecord) return <RecordDetailPage record={selectedRecord} onEdit={onEdit} onBack={() => onSelectRecord(null)} />;
+  if (selectedRecord) return <RecordDetailPage record={selectedRecord} onEdit={onEdit} onDelete={onDelete} onBack={() => onSelectRecord(null)} />;
 
   return <div className="timeline-page"><button className="settings-back" onClick={onBack}><ArrowLeft size={18}/>Back to home</button><div className="timeline-heading"><p className="eyebrow">YOUR HEALTH STORY</p><h1>{displayName} Health timeline</h1><p>Move through your care history by month, then open any record for the full visit details.</p></div><div className="timeline-zoom" aria-label="Timeline month filter"><button className={selectedMonth === 'All' ? 'timeline-month active' : 'timeline-month'} onClick={() => setSelectedMonth('All')}>All</button>{months.map(month => <button className={selectedMonth === month ? 'timeline-month active' : 'timeline-month'} key={month} onClick={() => setSelectedMonth(month)}>{month}</button>)}</div><div className="visual-timeline">{visibleItems.length ? visibleItems.map((record, index) => { const date = timelineDate(record); const Icon = record.icon; return <button className="timeline-event" key={`${record.title}-${index}`} onClick={() => onSelectRecord(record)}><span className="timeline-line"/><span className="timeline-dot"/><span className="timeline-date"><b>{date.toLocaleString('en-US', { month: 'short' })}</b><small>{date.getDate()}</small></span><span className="timeline-event-card"><span className={`record-icon ${record.tone}`}><Icon size={17}/></span><span><b>{record.title}</b><small>{record.source}</small></span><ChevronRight size={16}/></span></button>; }) : <div className="empty-search">No records in this month yet.</div>}</div></div>;
 }
 
-function RecordDetailPage({ record, onBack, onEdit }) {
+function RecordDetailPage({ record, onBack, onEdit, onDelete }) {
   const date = timelineDate(record);
   const Icon = record.icon;
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const downloadAttachment = (attachment) => {
     const link = document.createElement('a');
@@ -942,6 +959,11 @@ function RecordDetailPage({ record, onBack, onEdit }) {
 
   const attachments = record.attachments || [];
 
+  const handleDelete = () => {
+    setShowDeleteConfirm(false);
+    if (onDelete) onDelete(record.id);
+  };
+
   return <div className="record-detail-page"><button className="settings-back" onClick={onBack}><ArrowLeft size={18}/>Back to timeline</button><div className="record-detail-heading"><span className={`record-icon ${record.tone}`}><Icon size={22}/></span><p className="eyebrow">HEALTH RECORD</p><h1>{record.title}</h1><span>{date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span></div><div className="record-detail-card"><DetailField label="Hospital / clinic" value={record.hospital || record.source}/><DetailField label="Doctor / provider" value={record.doctor || 'Not provided'}/><DetailField label="Amount" value={record.amount || 'Not provided'}/><DetailField label="Notes" value={record.notes || 'No notes added'}/></div>{attachments.length > 0 && (
     <div className="record-detail-attachments">
       <h3>Attachments ({attachments.length})</h3>
@@ -962,7 +984,7 @@ function RecordDetailPage({ record, onBack, onEdit }) {
         ))}
       </div>
     </div>
-  )}{onEdit && <button className="edit-record-button" onClick={onEdit}><Settings size={17}/>Edit record</button>}</div>;
+  )}<div className="record-detail-actions">{onEdit && <button className="edit-record-button" onClick={onEdit}><Settings size={17}/>Edit record</button>}{onDelete && <button className="delete-record-button" onClick={() => setShowDeleteConfirm(true)}><X size={17}/>Delete record</button>}</div>{showDeleteConfirm && <div className="confirm-backdrop" role="presentation" onClick={() => setShowDeleteConfirm(false)}><section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-record-title" onClick={event => event.stopPropagation()}><span className="confirm-icon"><X size={20}/></span><h2 id="delete-record-title">Delete this record?</h2><p>This action is permanent and cannot be undone. All attachments and associated data will be permanently removed.</p><div className="confirm-actions"><button className="confirm-cancel" onClick={() => setShowDeleteConfirm(false)}>Cancel</button><button className="confirm-delete" onClick={handleDelete}>Delete record</button></div></section></div>}</div>;
 }
 
 function DetailField({ label, value }) { return <div className="detail-field"><p>{label}</p><b>{value}</b></div>; }
