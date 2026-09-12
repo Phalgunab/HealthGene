@@ -806,10 +806,12 @@ function EditRecordPage({ record, onBack, onSave, primaryMemberName, familyList 
     (type === 'Scan' ? scanInputRef : uploadInputRef).current?.click();
   };
 
+  const [showMissingFamilyError, setShowMissingFamilyError] = useState(false);
+
   const submit = (event) => {
     event.preventDefault();
     if (!form.recordBelongsTo) {
-      alert('Please select who this record belongs to');
+      setShowMissingFamilyError(true);
       return;
     }
     onSave({ ...form, date: form.visitDate, attachments });
@@ -907,7 +909,7 @@ function EditRecordPage({ record, onBack, onSave, primaryMemberName, familyList 
     <input ref={attachmentInputRef} className="hidden-file-input" type="file" onChange={handleAttachmentUpload} />
 
     <button className="auth-primary" type="submit"><Check size={18}/>Save changes</button>
-  </form></div>;
+  </form>{showMissingFamilyError && <div className="confirm-backdrop" role="presentation" onClick={() => setShowMissingFamilyError(false)}><section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="missing-family-title" onClick={event => event.stopPropagation()}><span className="confirm-icon"><Users size={20}/></span><h2 id="missing-family-title">Select a family member</h2><p>Please choose who this record belongs to before saving.</p><div className="confirm-actions"><button className="confirm-cancel" onClick={() => setShowMissingFamilyError(false)}>OK</button></div></section></div>}</div>;
 }
 
 function TimelinePage({ items, selectedRecord, onSelectRecord, onEdit, onDelete, onBack, activePerson, primaryMemberName }) {
@@ -1096,6 +1098,7 @@ function AddHealthRecordPage({ close, addRecord, primaryMemberName, familyList }
   const [form, setForm] = useState(createRecordForm('Scan'));
   const [messageText, setMessageText] = useState('');
   const [attachments, setAttachments] = useState([]);
+  const [showMissingFamilyError, setShowMissingFamilyError] = useState(false);
   const scanInputRef = useRef(null);
   const uploadInputRef = useRef(null);
   const attachmentInputRef = useRef(null);
@@ -1184,7 +1187,7 @@ function AddHealthRecordPage({ close, addRecord, primaryMemberName, familyList }
 
   const saveRecord = () => {
     if (!form.recordBelongsTo) {
-      alert('Please select who this record belongs to');
+      setShowMissingFamilyError(true);
       return;
     }
     const recordWithAttachments = { ...form, attachments };
@@ -1298,7 +1301,7 @@ function AddHealthRecordPage({ close, addRecord, primaryMemberName, familyList }
     <input ref={attachmentInputRef} className="hidden-file-input" type="file" onChange={handleAttachmentUpload} />
 
     <div className="sheet-actions"><button className="sheet-secondary" type="button" onClick={close}>Cancel</button><button className="auth-primary" type="button" onClick={saveRecord}>Save record <Check size={18}/></button></div>
-    <p className="sheet-security"><LockKeyhole size={14}/>Encrypted and private by design</p></div></div>;
+    <p className="sheet-security"><LockKeyhole size={14}/>Encrypted and private by design</p>{showMissingFamilyError && <div className="confirm-backdrop" role="presentation" onClick={() => setShowMissingFamilyError(false)}><section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="missing-family-title" onClick={event => event.stopPropagation()}><span className="confirm-icon"><Users size={20}/></span><h2 id="missing-family-title">Select a family member</h2><p>Please choose who this record belongs to before saving.</p><div className="confirm-actions"><button className="confirm-cancel" onClick={() => setShowMissingFamilyError(false)}>OK</button></div></section></div>}</div></div>;
 }
 
 createRoot(document.getElementById('root')).render(<App />);
