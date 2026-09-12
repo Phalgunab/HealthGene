@@ -1236,6 +1236,13 @@ function AddHealthRecordPage({ close, addRecord, primaryMemberName, familyList }
     ...familyList.map(member => ({ name: member.name, label: member.relationship || 'Family member' }))
   ];
 
+  // Auto-select family member if there's only one
+  useEffect(() => {
+    if (familyOptions.length === 1 && !form.recordBelongsTo) {
+      setForm((current) => ({ ...current, recordBelongsTo: familyOptions[0].name }));
+    }
+  }, [familyList.length]);
+
   const typeMeta = {
     Scan: { label: 'Scan a document', hint: 'Open your camera and capture a document', tone: 'blue', icon: Camera },
     Upload: { label: 'Upload a file', hint: 'Choose a PDF, screenshot, or image', tone: 'lavender', icon: Upload },
