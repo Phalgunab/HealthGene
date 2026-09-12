@@ -209,6 +209,8 @@ function App() {
   });
   const [items, setItems] = useState([]);
   const [notifications, setNotifications] = useState([]);
+  // Avatar should always show owner/login user initials, not the selected person
+  const ownerInitials = profileDetails.fullName ? profileDetails.fullName.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase() : '';
   const activeInitials = activePerson.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase();
 
   useEffect(() => onAuthStateChanged(auth, (user) => {
@@ -462,7 +464,7 @@ function App() {
     <section className="mobile-app">
       <header className="topbar">
         <div className="brand"><span className="brand-mark"><HeartPulse size={17}/></span><span>MyFamilyHealth</span></div>
-        <div className="top-actions"><button className="icon-button" onClick={() => setShowSearch(open => !open)} aria-label="Search" aria-expanded={showSearch}><Search size={20}/></button><button className="avatar" onClick={() => setTab('Profile')} aria-label={`${activePerson} profile`}>{activeInitials}</button></div>
+        <div className="top-actions"><button className="icon-button" onClick={() => setShowSearch(open => !open)} aria-label="Search" aria-expanded={showSearch}><Search size={20}/></button><button className="avatar" onClick={() => setTab('Profile')} aria-label={`${profileDetails.fullName} profile`}>{ownerInitials}</button></div>
       </header>
 
       {showSearch && <SearchPanel searchTerm={searchTerm} setSearchTerm={setSearchTerm} submitSearch={() => { setShowSearch(false); setTab('Records'); }} chooseExample={(example) => { setSearchTerm(example); setShowSearch(false); setTab('Records'); }} />}
@@ -675,15 +677,6 @@ function HomeScreen({ activePerson, setActivePerson, primaryMemberName, familyLi
   return <>
     <div className="hello-row"><div><p className="eyebrow">{dateHeader}</p><h1>{getTimeGreeting()}, {primaryFirstName}</h1></div><button className="bell" onClick={toggleNotifications} aria-label="Notifications" aria-expanded={showNotifications}><Bell size={19}/><i/><span className="notification-count">{notifications?.filter(notification => notification.unread)?.length || 0}</span></button></div>
     {showNotifications && <NotificationPanel notifications={notifications || []} onMarkAsRead={onMarkNotificationAsRead} showRead={showReadNotifications} setShowRead={setShowReadNotifications} unreadPage={unreadNotificationPage} setUnreadPage={setUnreadNotificationPage} readPage={readNotificationPage} setReadPage={setReadNotificationPage} />}
-    
-    {/* Owner/Login User Profile Icon - Static, never changes */}
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px' }}>
-      <div style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: '#287368', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '14px' }}>
-        {ownerInitials}
-      </div>
-    </div>
-    
-    {/* Family Member Selector Dropdown */}
     <div className={`person-select ${personMenuOpen ? 'person-open' : ''}`}>
       <button className="person-picker" onClick={() => setPersonMenuOpen(open => !open)} aria-expanded={personMenuOpen} style={{ paddingLeft: '12px' }}><span><b>{activePerson || 'No profile yet'}</b><small>{isPrimaryHolderActive ? 'Personal health space' : (familyList.find(m => m.name === activePerson)?.relationship || 'Family member')}</small></span><ChevronDown size={18}/></button>
       {personMenuOpen && <div className="person-menu" role="listbox">{primaryMemberName && <button className={activePerson === primaryMemberName ? 'person-option selected' : 'person-option'} type="button" role="option" aria-selected={activePerson === primaryMemberName} key={`primary-${primaryMemberName}`} onClick={() => { setActivePerson(primaryMemberName); setPersonMenuOpen(false); }}><span className="person-mini">{primaryMemberName.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase()}</span><span><b>{primaryMemberName}</b><small>Personal health space</small></span>{activePerson === primaryMemberName && <Check size={16}/>}</button>}{familyList.map(member => { const memberInitials = member.name.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase(); return <button className={activePerson === member.name ? 'person-option selected' : 'person-option'} type="button" role="option" aria-selected={activePerson === member.name} key={member.id || member.name} onClick={() => { setActivePerson(member.name); setPersonMenuOpen(false); }}><span className="person-mini">{memberInitials}</span><span><b>{member.name}</b><small>{member.relationship || 'Family member'}</small></span>{activePerson === member.name && <Check size={16}/>}</button>; })}</div>}
