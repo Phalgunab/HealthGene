@@ -1252,9 +1252,9 @@ function AddHealthRecordPage({ close, addRecord, primaryMemberName, familyList }
       <div className="form-section">
         <h3 className="form-section-title">Auto-populate from</h3>
         <div className="auto-populate-header">
-          <button type="button" className={`auto-populate-tab ${selectedAutoPopulateOption === 'sms' ? 'active' : ''}`} onClick={() => setSelectedAutoPopulateOption('sms')}>📱 Load from SMS</button>
-          <button type="button" className={`auto-populate-tab ${selectedAutoPopulateOption === 'camera' ? 'active' : ''}`} onClick={() => setSelectedAutoPopulateOption('camera')}>📷 Scan with Camera</button>
-          <button type="button" className={`auto-populate-tab ${selectedAutoPopulateOption === 'upload' ? 'active' : ''}`} onClick={() => setSelectedAutoPopulateOption('upload')}>📄 Upload Document</button>
+          <button type="button" className={`auto-populate-tab ${selectedAutoPopulateOption === 'sms' ? 'active' : ''}`} onClick={() => setSelectedAutoPopulateOption('sms')}>Load from SMS</button>
+          <button type="button" className={`auto-populate-tab ${selectedAutoPopulateOption === 'camera' ? 'active' : ''}`} onClick={() => setSelectedAutoPopulateOption('camera')}>Scan with Camera</button>
+          <button type="button" className={`auto-populate-tab ${selectedAutoPopulateOption === 'upload' ? 'active' : ''}`} onClick={() => setSelectedAutoPopulateOption('upload')}>Upload Document</button>
         </div>
         <div className="auto-populate-content">
           {selectedAutoPopulateOption === 'sms' && (
