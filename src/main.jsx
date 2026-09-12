@@ -307,7 +307,7 @@ function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [tab, setTab] = useState('Home');
   const [showAdd, setShowAdd] = useState(false);
-  const [showNotice, setShowNotice] = useState(false);
+  const [toastMessage, setToastMessage] = useState(null);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showReadNotifications, setShowReadNotifications] = useState(false);
   const [unreadNotificationPage, setUnreadNotificationPage] = useState(1);
@@ -517,9 +517,13 @@ function App() {
       addDoc(collection(db, 'users', currentUser.uid, 'records'), serializeRecord(record)).catch(error => console.error('Could not save record', error));
       addNotification('New health record added', `${record.title} has been saved to your timeline.`);
     }
+    
+    // Show toast with family member name
+    const familyMemberName = record.recordBelongsTo || 'Your';
+    setToastMessage(`Saved ${familyMemberName}'s health record`);
+    
     setShowAdd(false);
-    setShowNotice(true);
-    setTimeout(() => setShowNotice(false), 2800);
+    setTimeout(() => setToastMessage(null), 2800);
   };
 
   const updateRecord = async (recordId, updates) => {
@@ -624,7 +628,7 @@ function App() {
       </nav>
 
       {showAdd && <AddHealthRecordPage close={() => setShowAdd(false)} addRecord={addRecord} primaryMemberName={profileDetails.fullName} familyList={familyList} />}
-      {showNotice && <div className="toast"><ShieldCheck size={18}/>Saved privately to your health timeline</div>}
+      {toastMessage && <div className="toast"><ShieldCheck size={18}/>{toastMessage}</div>}
     </section>
   </main>;
 }
