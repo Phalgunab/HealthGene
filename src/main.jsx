@@ -94,31 +94,81 @@ const parseIncomingMessage = (message = '') => {
   if (!text) return {};
 
   const clean = text.replace(/\s+/g, ' ').trim();
-  const amountMatch = clean.match(/(?:amount|paid|bill|charge|payment|cost|total)[^\d]{0,20}\$?\s?(\d+(?:,\d{3})*(?:\.\d{1,2})?)/i)
-    || clean.match(/\$\s?(\d+(?:,\d{3})*(?:\.\d{1,2})?)/i)
-    || clean.match(/(?:rs|inr|usd|usd\s*)\.?\s?(\d+(?:,\d{3})*(?:\.\d{1,2})?)/i);
 
-  const dateMatch = clean.match(/(\d{4}-\d{2}-\d{2}|\d{1,2}[-/ ]\d{1,2}[-/ ]\d{2,4}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[\s\d,]{1,10}\d{2,4})/i);
-  const hospitalMatch = clean.match(/(?:hospital|clinic|medical center|center|facility)[^\n:]{0,30}[:\-]\s*([^\n.]+)/i)
-    || clean.match(/(?:at|in)\s+([A-Z][A-Za-z0-9. &'-]+(?:Hospital|Clinic|Center|Medical Center|Care|Diagnostics|Institute))/i);
-  const doctorMatch = clean.match(/(?:doctor|provider|physician|consultant|dr\.?|with)[^\n:]{0,25}[:\-]?\s*([A-Z][A-Za-z. '-]+(?:\s+[A-Z][A-Za-z. '-]+)*)/i);
+  // Enhanced amount extraction - handles multiple formats
+  const amountMatch = clean.match(/(?:amount|paid|bill|charge|payment|cost|total|fee)[^\d]{0,20}[\$₹]?\s?(\d+(?:[,]\d{3})*(?:\.\d{1,2})?)/i)
+    || clean.match(/[\$₹]\s?(\d+(?:[,]\d{3})*(?:\.\d{1,2})?)/i)
+    || clean.match(/(?:rs\.?|inr|₹|usd|aed|sgd)\s*\.?\s?(\d+(?:[,]\d{3})*(?:\.\d{1,2})?)/i);
 
-  const title = clean.match(/(?:appointment|visit|consultation|checkup|procedure|lab|scan|test|follow-up)[^\n:]{0,25}[:\-]?\s*([^\n]+)/i)?.[1]?.trim()
-    || 'Hospital visit';
+  // Enhanced date extraction - supports ISO, DD-MM-YYYY (Indian), DD/MM/YYYY, and text formats
+  const dateMatch = clean.match(/(\d{4}-\d{2}-\d{2})/) // ISO YYYY-MM-DD
+    || clean.match(/(\d{1,2}[-\/]\d{1,2}[-\/]\d{4})/) // DD-MM-YYYY or DD/MM/YYYY with 4-digit year
+    || clean.match(/(\d{1,2}[-\/]\d{1,2}[-\/]\d{2})/) // DD-MM-YY (assume 20YY)
+    || clean.match(/(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[\s\d,]{1,10}\d{2,4}/i); // Text dates
+
+  // Normalize extracted date to YYYY-MM-DD
+  let visitDate = new Date().toISOString().slice(0, 10);
+  if (dateMatch && dateMatch[0]) {
+    const parsed = parseDate(dateMatch[0]);
+    if (parsed) visitDate = parsed;
+  }
+
+  // Enhanced hospital/facility extraction - more flexible patterns
+  const hospitalMatch = clean.match(/(?:hospital|clinic|medical center|center|facility|diagnostics|lab|laboratory|urgent care|care center)[^\n:]{0,40}[:\-]?\s*([^\n,]+)/i)
+    || clean.match(/(?:at|in|visited)\s+([A-Z][A-Za-z0-9. &',-]+(?:Hospital|Clinic|Center|Medical Center|Care|Diagnostics|Institute|Urgent Care|Lab)[A-Za-z0-9. &',-]*)/i)
+    || clean.match(/^([A-Z][A-Za-z0-9. &',-]*(?:Hospital|Clinic|Center|Medical|Care|Diagnostics|Institute))/i);
+
+  // Enhanced doctor/provider extraction - handles titles and credentials
+  const doctorMatch = clean.match(/(?:doctor|provider|physician|consultant|dr\.?|with|seen by|examined by|treated by)[^\n:]{0,35}[:\-]?\s*(?:dr\.?\s+)?([A-Z][A-Za-z. '-]+(?:\s+[A-Z][A-Za-z. '-]+)*(?:\s+(?:MD|MS|MBBS|DDS|DMD|DO|BDS|BAMS))?)/i)
+    || clean.match(/([A-Z][A-Za-z. '-]+(?:\s+[A-Z][A-Za-z. '-]+)*)\s+(?:MD|MBBS|MS|DDS|DMD|DO|BDS|BAMS|BNYS)/i);
+
+  // Enhanced title extraction - medical-specific terms
+  const titleMatch = clean.match(/(?:appointment|visit|consultation|checkup|procedure|lab|scan|test|follow-up|report|result|x-ray|mri|ultrasound|blood test|ct scan)[^\n:]{0,40}[:\-]?\s*([^\n]+)/i)
+    || clean.match(/^([A-Za-z0-9\s]+(?:Report|Result|Test|Scan|Visit|Checkup))/i);
+
+  let title = titleMatch ? titleMatch[1]?.trim() : '';
+  if (title.length > 60) title = title.slice(0, 60).trim();
+  if (!title) title = 'Health visit';
 
   const value = amountMatch ? amountMatch[1].replace(/,/g, '') : '';
-  const hospital = hospitalMatch ? hospitalMatch[1].replace(/[.\n]+$/g, '').trim() : '';
-  const doctor = doctorMatch ? doctorMatch[1].replace(/^(?:dr\.?|doctor|provider|physician|consultant)\s+/i, '').replace(/[.\n]+$/g, '').trim() : '';
-  const visitDate = dateMatch ? dateMatch[1] : new Date().toISOString().slice(0, 10);
+  const hospital = hospitalMatch ? hospitalMatch[1].replace(/[.\n,]+$/g, '').trim() : '';
+  const doctor = doctorMatch ? doctorMatch[1].replace(/^(?:dr\.?|doctor|provider|physician|consultant)\s+/i, '').replace(/[.\n,]+$/g, '').trim() : '';
 
   return {
-    title: title.length > 60 ? title.slice(0, 60).trim() : title,
-    hospital: hospital || 'Hospital visit',
+    title,
+    hospital: hospital || 'Health facility',
     doctor: doctor || 'Provider confirmed',
     amount: value ? `$${Number(value).toFixed(2).replace(/\.00$/, '')}` : '',
-    visitDate: visitDate,
+    visitDate,
     notes: clean,
   };
+};
+
+// Helper function to parse dates in multiple formats
+const parseDate = (dateStr) => {
+  if (!dateStr) return null;
+
+  // Already ISO format
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+
+  // DD-MM-YYYY or DD/MM/YYYY
+  const dmyMatch = dateStr.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})$/);
+  if (dmyMatch) {
+    let [, d, m, y] = dmyMatch;
+    y = y.length === 2 ? '20' + y : y;
+    d = d.padStart(2, '0');
+    m = m.padStart(2, '0');
+    const date = new Date(`${y}-${m}-${d}`);
+    if (!isNaN(date.getTime())) return `${y}-${m}-${d}`;
+  }
+
+  // Try parsing as text date
+  const date = new Date(dateStr);
+  if (!isNaN(date.getTime())) {
+    return date.toISOString().slice(0, 10);
+  }
+
+  return null;
 };
 
 const parseFileText = (text = '') => {
@@ -128,17 +178,66 @@ const parseFileText = (text = '') => {
 };
 
 const readPdfText = async (file) => {
-  const buffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
-  let extracted = '';
+  try {
+    const buffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+    let extracted = '';
+    let textQuality = 0; // Track if PDF has extractable text
 
-  for (let pageIndex = 1; pageIndex <= pdf.numPages; pageIndex += 1) {
-    const page = await pdf.getPage(pageIndex);
-    const content = await page.getTextContent();
-    extracted += content.items.map((item) => item.str).join(' ') + '\n';
+    // Extract text from all pages
+    for (let pageIndex = 1; pageIndex <= pdf.numPages; pageIndex += 1) {
+      try {
+        const page = await pdf.getPage(pageIndex);
+        const content = await page.getTextContent();
+        const pageText = content.items.map((item) => item.str).join(' ').trim();
+        
+        if (pageText) {
+          textQuality += pageText.split(/\s+/).length; // Count words
+          extracted += pageText + '\n';
+        }
+      } catch (pageError) {
+        console.warn(`Could not extract text from PDF page ${pageIndex}`, pageError);
+      }
+    }
+
+    // If minimal text extracted, PDF might be scanned - use OCR
+    if (textQuality < 50) {
+      console.log('PDF appears to be scanned, attempting OCR...');
+      try {
+        // Convert first page to image for OCR
+        const page = await pdf.getPage(1);
+        const canvas = document.createElement('canvas');
+        const scale = 2;
+        const viewport = page.getViewport({ scale });
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+
+        const context = canvas.getContext('2d');
+        await page.render({ canvasContext: context, viewport }).promise;
+
+        // Convert canvas to blob and run OCR
+        return new Promise((resolve) => {
+          canvas.toBlob(async (blob) => {
+            try {
+              const { data } = await Tesseract.recognize(blob, 'eng', { logger: () => {} });
+              resolve(data?.text || extracted || '');
+            } catch (ocrError) {
+              console.warn('OCR failed, falling back to extracted text', ocrError);
+              resolve(extracted);
+            }
+          });
+        });
+      } catch (ocrError) {
+        console.warn('Could not perform OCR on PDF', ocrError);
+        return extracted;
+      }
+    }
+
+    return extracted;
+  } catch (error) {
+    console.error('PDF text extraction failed:', error);
+    throw error;
   }
-
-  return extracted;
 };
 
 const handleUploadedDocument = async (file, setForm) => {
@@ -146,19 +245,44 @@ const handleUploadedDocument = async (file, setForm) => {
 
   try {
     let text = '';
-    if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
-      text = await readPdfText(file);
-    } else if (file.type.startsWith('image/')) {
-      const { data } = await Tesseract.recognize(file, 'eng', { logger: () => {} });
-      text = data?.text || '';
-    }
+    let extractionMethod = 'unknown';
 
-    const parsed = parseFileText(text);
-    if (Object.keys(parsed).length === 0) {
+    try {
+      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+        text = await readPdfText(file);
+        extractionMethod = 'pdf';
+      } else if (file.type.startsWith('image/')) {
+        const { data } = await Tesseract.recognize(file, 'eng', { logger: () => {} });
+        text = data?.text || '';
+        extractionMethod = 'ocr';
+      }
+    } catch (extractError) {
+      console.error(`Extraction (${extractionMethod}) failed:`, extractError);
+      // Fallback: just note the filename
       setForm((current) => ({ ...current, notes: `Imported file: ${file.name}` }));
       return;
     }
 
+    // If no text was extracted, use filename as fallback
+    if (!text || text.trim().length < 5) {
+      console.warn('Extracted text too short, using filename');
+      setForm((current) => ({ ...current, notes: `Imported file: ${file.name}` }));
+      return;
+    }
+
+    // Parse the extracted text
+    const parsed = parseFileText(text);
+    
+    if (Object.keys(parsed).length === 0 || !parsed.title) {
+      // Parsing failed - use filename and original text
+      setForm((current) => ({ 
+        ...current, 
+        notes: `Imported from ${file.name}:\n${text.substring(0, 200)}...` 
+      }));
+      return;
+    }
+
+    // Successfully parsed - populate form
     setForm((current) => ({
       ...current,
       ...parsed,
@@ -169,8 +293,11 @@ const handleUploadedDocument = async (file, setForm) => {
       visitDate: parsed.visitDate || current.visitDate,
       notes: parsed.notes || current.notes,
     }));
+
+    console.log(`Successfully extracted data from ${file.name} (method: ${extractionMethod})`);
   } catch (error) {
-    console.error('Could not parse uploaded file', error);
+    console.error('Could not process uploaded file:', error);
+    setForm((current) => ({ ...current, notes: `Failed to process file: ${file.name}` }));
   }
 };
 
