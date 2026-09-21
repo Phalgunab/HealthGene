@@ -5,7 +5,8 @@ import Tesseract from 'tesseract.js';
 import {
   Activity, ArrowUpRight, Bell, CalendarDays, Camera, ChevronDown, ChevronRight,
   FileText, HeartPulse, Home, Image, LockKeyhole, MoreHorizontal, Plus,
-  Search, Settings, ShieldCheck, Sparkles, Upload, Users, X, ArrowLeft, Check, Smartphone, LogOut
+  Search, Settings, ShieldCheck, Sparkles, Upload, Users, X, ArrowLeft, Check, Smartphone, LogOut,
+  FlaskConical, Thermometer, Stethoscope, Pill, Syringe, ScanLine, ZoomIn, ZoomOut, Scissors, BedDouble
 } from 'lucide-react';
 import './styles.css';
 import { auth, db, googleProvider } from './firebase';
@@ -70,8 +71,37 @@ const recordKindConfig = {
   Upload: { title: 'Uploaded report', source: 'File uploaded', tone: 'lavender', icon: Upload },
 };
 
+const healthNodeTypes = {
+  blood: { label: 'Blood work', className: 'node-blood', icon: Activity },
+  lab: { label: 'Lab result', className: 'node-lab', icon: FlaskConical },
+  symptom: { label: 'Symptom', className: 'node-symptom', icon: Thermometer },
+  visit: { label: 'Doctor visit', className: 'node-visit', icon: Stethoscope },
+  medication: { label: 'Medication', className: 'node-medication', icon: Pill },
+  vaccine: { label: 'Vaccination', className: 'node-vaccine', icon: Syringe },
+  imaging: { label: 'Imaging', className: 'node-imaging', icon: ScanLine },
+  surgery: { label: 'Surgery', className: 'node-surgery', icon: Scissors },
+  hospitalization: { label: 'Hospitalization', className: 'node-hospitalization', icon: BedDouble },
+  document: { label: 'Report', className: 'node-document', icon: FileText },
+};
+
+const getHealthNodeType = (record = {}) => {
+  if (record.healthNodeType && healthNodeTypes[record.healthNodeType]) return record.healthNodeType;
+  const text = [record.title, record.type, record.kind, record.notes, record.source].filter(Boolean).join(' ').toLowerCase();
+  if (/blood|cbc|haemoglobin|hemoglobin|lipid|glucose/.test(text)) return 'blood';
+  if (/lab|urine|pathology|culture/.test(text)) return 'lab';
+  if (/fever|cough|pain|symptom|rash|headache/.test(text)) return 'symptom';
+  if (/medication|medicine|tablet|prescription|dose/.test(text)) return 'medication';
+  if (/vaccine|vaccin|immuni[sz]/.test(text)) return 'vaccine';
+  if (/mri|x-ray|xray|ultrasound|ct scan|imaging|scan/.test(text)) return 'imaging';
+  if (/surgery|surgical|operation|procedure/.test(text)) return 'surgery';
+  if (/hospitali[sz]ation|admission|inpatient|emergency room|er visit/.test(text)) return 'hospitalization';
+  if (/visit|appointment|consult|checkup|doctor/.test(text)) return 'visit';
+  return 'document';
+};
+
 const createRecordForm = (type = 'Scan') => ({
   type,
+  healthNodeType: 'document',
   title: recordKindConfig[type]?.title ?? 'New health record',
   visitDate: new Date().toISOString().slice(0, 10),
   hospital: '',
@@ -510,6 +540,7 @@ function App() {
       notes: details?.notes?.trim() || '',
       attachments: details?.attachments || [],
       recordBelongsTo: details?.recordBelongsTo || activePerson || '',
+      healthNodeType: healthNodeTypes[details?.healthNodeType] ? details.healthNodeType : getHealthNodeType(details),
     };
 
     setItems([record, ...items]);
@@ -619,7 +650,7 @@ function App() {
       <div className="content">
         {tab === 'Home' && (showTimeline ? (editingRecord ? <EditRecordPage record={editingRecord} onBack={() => setEditingRecord(null)} onSave={(updates) => updateRecord(editingRecord.id, updates)} primaryMemberName={profileDetails.fullName} familyList={familyList} /> : <TimelinePage items={items} selectedRecord={timelineRecord} onSelectRecord={setTimelineRecord} onEdit={() => setEditingRecord(timelineRecord)} onDelete={deleteRecord} onBack={() => { setShowTimeline(false); setTimelineRecord(null); }} activePerson={activePerson} primaryMemberName={profileDetails.fullName} />) : recordDetail ? (editingRecord ? <EditRecordPage record={editingRecord} onBack={() => setEditingRecord(null)} onSave={(updates) => updateRecord(editingRecord.id, updates)} primaryMemberName={profileDetails.fullName} familyList={familyList} /> : <RecordDetailPage record={recordDetail} onEdit={() => setEditingRecord(recordDetail)} onDelete={deleteRecord} onBack={() => setRecordDetail(null)} />) : <HomeScreen activePerson={activePerson} setActivePerson={setActivePerson} primaryMemberName={profileDetails.fullName} familyList={familyList} items={items} notifications={notifications} onMarkNotificationAsRead={markNotificationAsRead} onAdd={() => setShowAdd(true)} onViewTimeline={() => setShowTimeline(true)} onOpenRecord={setRecordDetail} showNotifications={showNotifications} showReadNotifications={showReadNotifications} setShowReadNotifications={setShowReadNotifications} unreadNotificationPage={unreadNotificationPage} setUnreadNotificationPage={setUnreadNotificationPage} readNotificationPage={readNotificationPage} setReadNotificationPage={setReadNotificationPage} toggleNotifications={() => setShowNotifications(open => !open)} />)}
         {tab === 'Records' && (recordDetail ? (editingRecord ? <EditRecordPage record={editingRecord} onBack={() => setEditingRecord(null)} onSave={(updates) => updateRecord(editingRecord.id, updates)} primaryMemberName={profileDetails.fullName} familyList={familyList} /> : <RecordDetailPage record={recordDetail} onEdit={() => setEditingRecord(recordDetail)} onDelete={deleteRecord} onBack={() => setRecordDetail(null)} />) : <RecordsScreen items={items} searchTerm={searchTerm} setSearchTerm={setSearchTerm} onAdd={() => setShowAdd(true)} onOpenRecord={setRecordDetail} activePerson={activePerson} primaryMemberName={profileDetails.fullName} />)}
-        {tab === 'Family' && (showAddFamily ? <AddFamilyMemberPage onBack={() => setShowAddFamily(false)} onSave={addFamilyMember} /> : editingMember ? <EditFamilyMemberPage member={editingMember} onBack={() => setEditingMember(null)} onSave={(updatedMember) => updateFamilyMember(updatedMember, editingMember.name)} onDelete={() => deleteFamilyMember(editingMember)} /> : <FamilyScreen activePerson={activePerson} setActivePerson={setActivePerson} primaryMemberName={profileDetails.fullName} familyList={familyList} onAddMember={() => setShowAddFamily(true)} onOpenMember={setEditingMember} />)}
+        {tab === 'Family' && (showAddFamily ? <AddFamilyMemberPage onBack={() => setShowAddFamily(false)} onSave={addFamilyMember} /> : editingMember ? <EditFamilyMemberPage member={editingMember} onBack={() => setEditingMember(null)} onSave={(updatedMember) => updateFamilyMember(updatedMember, editingMember.name)} onDelete={() => deleteFamilyMember(editingMember)} /> : <FamilyScreen activePerson={activePerson} setActivePerson={setActivePerson} primaryMemberName={profileDetails.fullName} familyList={familyList} items={items} onAddMember={() => setShowAddFamily(true)} onOpenMember={setEditingMember} />)}
         {tab === 'Profile' && (editProfile ? <EditProfilePage details={profileDetails} onBack={() => setEditProfile(false)} onSave={saveProfile} /> : settingsPage ? <SettingsPage page={settingsPage} activePerson={activePerson} familyList={familyList} items={items} onBack={() => setSettingsPage(null)} /> : <ProfileScreen activePerson={activePerson} profileDetails={profileDetails} onLogout={() => signOut(auth)} openSettings={setSettingsPage} openEditProfile={() => setEditProfile(true)} />)}
       </div>
 
@@ -1146,11 +1177,28 @@ function RecordsScreen({ items, searchTerm, setSearchTerm, onAdd, onOpenRecord, 
   return <><div className="page-title"><p className="eyebrow">YOUR LIBRARY</p><h1>{displayName} Health records</h1><span>{allItems.length} records organized in one secure place.</span></div><div className="search-box"><Search size={18}/><input aria-label="Search records" value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder="Search records, hospitals, doctors" />{searchTerm && <button className="clear-search" onClick={() => setSearchTerm('')} aria-label="Clear search"><X size={15}/></button>}</div>{searchTerm && <p className="search-result-label">Showing results for “{searchTerm}”</p>}<div className="filter-row">{filters.map(([value, label]) => <button key={value} className={recordFilter === value ? 'selected-filter' : ''} onClick={() => setRecordFilter(value)}>{label}</button>)}</div><div className="record-list">{filteredItems.length ? filteredItems.map((record, index) => <RecordRow record={record} key={index} onOpen={() => onOpenRecord(record)} />) : <div className="empty-search">No matching records yet.</div>}</div><button className="floating-add" onClick={onAdd}><Plus size={21}/>Add record</button></>;
 }
 
-function FamilyScreen({ activePerson, setActivePerson, familyList, onAddMember, onOpenMember, primaryMemberName }) {
+function FamilyScreen({ activePerson, setActivePerson, familyList, items, onAddMember, onOpenMember, primaryMemberName }) {
   const people = familyList.map(({ name, initial, tone, relationship }) => [initial, name, tone, relationship]);
   const isPrimaryHolderActive = activePerson === primaryMemberName;
 
-  return <><div className="page-title family-title"><p className="eyebrow">SHARED CARE</p><h1>Family health</h1><span>Care for the people you love.</span></div><div className="family-tip"><Sparkles size={18}/><span>Keep everyone's care history organized in one place.</span></div>{people.length ? <div className="people-list">{people.map(([initial,name,tone,relationship])=><button onClick={()=>{ setActivePerson(name); onOpenMember(familyList.find(member => member.name === name)); }} className={`person-row ${activePerson===name?'person-selected':''}`} key={name}><span className={`family-avatar ${tone}`}>{initial}</span><span><b>{name}</b><small>{relationship || `${name}'s health records`}</small></span><ChevronRight size={18}/></button>)}</div> : <div className="empty-search">No family members added yet.</div>}<button className="invite-button" onClick={onAddMember}><Plus size={19}/>Add family member</button><p className="family-footnote"><ShieldCheck size={14}/>You control who can view and manage each profile.</p></> }
+  return <><div className="page-title family-title"><p className="eyebrow">SHARED CARE</p><h1>Family health</h1><span>Care for the people you love.</span></div><div className="family-tip"><Sparkles size={18}/><span>Keep everyone's care history organized in one place.</span></div>{people.length ? <div className="people-list">{people.map(([initial,name,tone,relationship])=><button onClick={()=>{ setActivePerson(name); onOpenMember(familyList.find(member => member.name === name)); }} className={`person-row ${activePerson===name?'person-selected':''}`} key={name}><span className={`family-avatar ${tone}`}>{initial}</span><span><b>{name}</b><small>{relationship || `${name}'s health records`}</small></span><ChevronRight size={18}/></button>)}</div> : <div className="empty-search">No family members added yet.</div>}<FamilyHealthGraph primaryMemberName={primaryMemberName} familyList={familyList} items={items} activePerson={activePerson} setActivePerson={setActivePerson}/><button className="invite-button" onClick={onAddMember}><Plus size={19}/>Add family member</button><p className="family-footnote"><ShieldCheck size={14}/>You control who can view and manage each profile.</p></> }
+
+function FamilyHealthGraph({ primaryMemberName, familyList, items, activePerson, setActivePerson }) {
+  const [zoom, setZoom] = useState(1);
+  const [selectedNode, setSelectedNode] = useState(null);
+  const members = [primaryMemberName && { name: primaryMemberName, relationship: 'You', initial: primaryMemberName.slice(0, 1) }, ...familyList].filter(Boolean);
+  const recordsFor = (name) => items.filter(record => (record.recordBelongsTo || primaryMemberName) === name).slice(-8).reverse();
+  const visibleRecords = (member) => recordsFor(member.name).slice(0, zoom === 1 ? 2 : zoom === 2 ? 4 : 8);
+  const selectNode = (member, record) => { setActivePerson(member.name); setSelectedNode({ member: member.name, record }); };
+
+  return <section className="family-graph" aria-label="Family health map">
+    <div className="family-graph-heading"><div><p className="eyebrow">FAMILY HEALTH MAP</p><h2>Care at a glance</h2></div><div className="graph-zoom" aria-label="Map detail level"><button onClick={() => setZoom(level => Math.max(1, level - 1))} disabled={zoom === 1} aria-label="Zoom out"><ZoomOut size={15}/></button><span>{zoom}×</span><button onClick={() => setZoom(level => Math.min(3, level + 1))} disabled={zoom === 3} aria-label="Zoom in"><ZoomIn size={15}/></button></div></div>
+    <p className="family-graph-intro">Zoom in to reveal more events for each person. Node color shows record type, not severity.</p>
+    <div className={`family-graph-lanes graph-detail-${zoom}`}>{members.map(member => { const memberRecords = visibleRecords(member); return <div className={`graph-lane ${activePerson === member.name ? 'graph-lane-active' : ''}`} key={member.name}><button className="graph-person" onClick={() => setActivePerson(member.name)}><span>{member.initial || member.name.slice(0, 1)}</span><b>{member.name === primaryMemberName ? 'You' : member.name.split(' ')[0]}</b></button><div className="graph-track"><i/>{memberRecords.length ? memberRecords.map((record, index) => { const type = healthNodeTypes[getHealthNodeType(record)]; const Icon = type.icon; return <button className={`health-node ${type.className} ${selectedNode?.record === record ? 'health-node-selected' : ''}`} title={`${type.label}: ${record.title}`} aria-label={`${member.name}: ${type.label}, ${record.title}`} key={record.id || `${record.title}-${index}`} onClick={() => selectNode(member, record)}><Icon size={15}/><span>{zoom >= 2 ? type.label : ''}</span></button>; }) : <span className="empty-graph-node">No records yet</span>}</div></div>; })}</div>
+    <div className="graph-legend">{Object.entries(healthNodeTypes).map(([key, type]) => { const Icon = type.icon; return <span key={key}><i className={type.className}><Icon size={12}/></i>{type.label}</span>; })}</div>
+    {selectedNode && <p className="graph-selected-note"><b>{selectedNode.member}</b> · {healthNodeTypes[getHealthNodeType(selectedNode.record)].label}: {selectedNode.record.title}</p>}
+  </section>;
+}
 
 function AddFamilyMemberPage({ onBack, onSave }) {
   const [name, setName] = useState('');
@@ -1207,8 +1255,8 @@ function SettingsPage({ page, activePerson, familyList, items, onBack }) {
   const Icon = pageDetails.icon;
 
   const exportRecords = () => {
-    const header = 'Title,Source,Date,Hospital,Doctor,Amount,Notes';
-    const rows = items.map(record => [record.title, record.source, record.date, record.hospital, record.doctor, record.amount, record.notes].map(value => `"${String(value || '').replaceAll('"', '""')}"`).join(','));
+    const header = 'Title,Health node type,Source,Date,Hospital,Doctor,Amount,Notes';
+    const rows = items.map(record => [record.title, healthNodeTypes[getHealthNodeType(record)].label, record.source, record.date, record.hospital, record.doctor, record.amount, record.notes].map(value => `"${String(value || '').replaceAll('"', '""')}"`).join(','));
     const blob = new Blob([[header, ...rows].join('\n')], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -1391,6 +1439,18 @@ function AddHealthRecordPage({ close, addRecord, primaryMemberName, familyList }
               <option key={option.name} value={option.name}>
                 {option.name} — {option.label}
               </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="form-section">
+        <h3 className="form-section-title">Health node type</h3>
+        <div className="field-group">
+          <label htmlFor="health-node-type">Category shown in the family health map</label>
+          <select id="health-node-type" value={form.healthNodeType} onChange={setField('healthNodeType')} className="family-select">
+            {Object.entries(healthNodeTypes).map(([value, type]) => (
+              <option key={value} value={value}>{type.label}</option>
             ))}
           </select>
         </div>
