@@ -95,3 +95,5 @@
 .node-surgery{color:#b65f46;background:#fff6f1}.node-hospitalization{color:#586f91;background:#f5f8fd}
 /* Keep scrolling content below the persistent bottom navigation. */
 .content{position:relative;z-index:0}.bottom-nav{z-index:30;background:#fffdf9;box-shadow:0 -8px 18px rgba(31,65,56,.06)}
+/* iOS Safari zooms focused controls below 16px. Keep every editable control at 16px on phones. */
+@media(max-width:480px){input:not([type="checkbox"]):not([type="radio"]),select,textarea{font-size:16px!important}}
