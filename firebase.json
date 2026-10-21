@@ -6,7 +6,7 @@
     "redirects": [],
     "rewrites": [
       {
-        "source": "!/**/*.@(js|css|woff|woff2|ttf|eot|ico|jpg|jpeg|gif|png|svg|webp|json|xml)",
+        "source": "**",
         "destination": "/index.html"
       }
     ],
