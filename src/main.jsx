@@ -5,32 +5,13 @@ import Tesseract from 'tesseract.js';
 import {
   Activity, ArrowUpRight, Bell, CalendarDays, Camera, ChevronDown, ChevronRight,
   FileText, HeartPulse, Home, Image, LockKeyhole, MoreHorizontal, Plus,
-  Search, Settings, ShieldCheck, Sparkles, Upload, Users, X, ArrowLeft, Check, Smartphone, LogOut
+  Search, Settings, ShieldCheck, Sparkles, Upload, Users, X, ArrowLeft, Check, Smartphone, LogOut,
+  FlaskConical, Thermometer, Stethoscope, Pill, Syringe, ScanLine, ZoomIn, ZoomOut, Scissors, BedDouble
 } from 'lucide-react';
 import './styles.css';
 import { auth, db, googleProvider } from './firebase';
 import { onAuthStateChanged, RecaptchaVerifier, signInWithPhoneNumber, signInWithPopup, signOut } from 'firebase/auth';
-import { addDoc, collection, deleteDoc, doc, getDocs, getDoc, setDoc } from 'firebase/firestore';
-import { sanitizeInput, escapeText } from './utils/security';
-import { ConsentModal } from './components/ConsentModal';
-import { initSentry } from './utils/sentryConfig';
-import ErrorBoundary from './components/ErrorBoundary';
-import { firestoreLimiter } from './utils/rateLimiter';
-import SessionTimeoutManager from './utils/sessionTimeout';
-import SessionTimeoutWarning from './components/SessionTimeoutWarning';
-import BiometricAuth from './components/BiometricAuth';
-import BiometricSettings from './components/BiometricSettings';
-import MFASetup from './components/MFASetup';
-import MFAVerification from './components/MFAVerification';
-import BackupCodes from './components/BackupCodes';
-import MFASettings from './components/MFASettings';
-import { getMFASettings } from './utils/mfaHelper';
-import { trustDevice, isDeviceTrusted } from './utils/deviceTrustHelper';
-
-// Initialize Sentry for production error tracking
-if (import.meta.env.MODE === 'production') {
-  initSentry();
-}
+import { addDoc, collection, deleteDoc, doc, getDocs, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 
 const countryCodes = [
   ['India (+91)', '+91'],
@@ -42,18 +23,47 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.mi
 const familyMembers = [];
 const records = [];
 
-const notifications = [
-  { id: 1, title: 'New lab result added', detail: 'Your annual blood work is ready to review.', time: '10 min ago', unread: true },
-  { id: 2, title: 'Appointment reminder', detail: 'Dental cleaning scheduled for October 14.', time: '2 hours ago', unread: true },
-  { id: 3, title: 'Record saved privately', detail: 'MRI scan was added to family member profile.', time: 'Yesterday', unread: false },
-];
 
 const searchExamples = ['Fever in last month', 'Apollo visit last month', 'Lab reports for Swetha'];
 
 const timelineDate = (record) => {
+  if (!record.date) return new Date();
+  // Handle ISO date format (YYYY-MM-DD)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(record.date)) {
+    return new Date(record.date + 'T00:00:00Z');
+  }
+  // Handle legacy format
   if (record.date === 'Today') return new Date();
   const parsed = new Date(`${record.date}, ${new Date().getFullYear()}`);
   return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+};
+
+const formatRecordDate = (dateString) => {
+  if (!dateString) return 'Not dated';
+  // Handle ISO date format (YYYY-MM-DD)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+    const date = new Date(dateString + 'T00:00:00Z');
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+  // Handle legacy format
+  if (dateString === 'Today') {
+    return new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+  if (dateString === 'Just now') {
+    return new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+  return dateString;
+};
+
+const getTimeGreeting = () => {
+  const hour = new Date().getHours();
+  if (hour >= 5 && hour < 12) {
+    return 'Good morning';
+  } else if (hour >= 12 && hour < 17) {
+    return 'Good afternoon';
+  } else {
+    return 'Good evening';
+  }
 };
 
 const recordKindConfig = {
@@ -61,14 +71,45 @@ const recordKindConfig = {
   Upload: { title: 'Uploaded report', source: 'File uploaded', tone: 'lavender', icon: Upload },
 };
 
+const healthNodeTypes = {
+  blood: { label: 'Blood work', className: 'node-blood', icon: Activity },
+  lab: { label: 'Lab result', className: 'node-lab', icon: FlaskConical },
+  symptom: { label: 'Symptom', className: 'node-symptom', icon: Thermometer },
+  visit: { label: 'Doctor visit', className: 'node-visit', icon: Stethoscope },
+  medication: { label: 'Medication', className: 'node-medication', icon: Pill },
+  vaccine: { label: 'Vaccination', className: 'node-vaccine', icon: Syringe },
+  imaging: { label: 'Imaging', className: 'node-imaging', icon: ScanLine },
+  surgery: { label: 'Surgery', className: 'node-surgery', icon: Scissors },
+  hospitalization: { label: 'Hospitalization', className: 'node-hospitalization', icon: BedDouble },
+  document: { label: 'Report', className: 'node-document', icon: FileText },
+};
+
+const getHealthNodeType = (record = {}) => {
+  if (record.healthNodeType && healthNodeTypes[record.healthNodeType]) return record.healthNodeType;
+  const text = [record.title, record.type, record.kind, record.notes, record.source].filter(Boolean).join(' ').toLowerCase();
+  if (/blood|cbc|haemoglobin|hemoglobin|lipid|glucose/.test(text)) return 'blood';
+  if (/lab|urine|pathology|culture/.test(text)) return 'lab';
+  if (/fever|cough|pain|symptom|rash|headache/.test(text)) return 'symptom';
+  if (/medication|medicine|tablet|prescription|dose/.test(text)) return 'medication';
+  if (/vaccine|vaccin|immuni[sz]/.test(text)) return 'vaccine';
+  if (/mri|x-ray|xray|ultrasound|ct scan|imaging|scan/.test(text)) return 'imaging';
+  if (/surgery|surgical|operation|procedure/.test(text)) return 'surgery';
+  if (/hospitali[sz]ation|admission|inpatient|emergency room|er visit/.test(text)) return 'hospitalization';
+  if (/visit|appointment|consult|checkup|doctor/.test(text)) return 'visit';
+  return 'document';
+};
+
 const createRecordForm = (type = 'Scan') => ({
   type,
+  healthNodeType: 'document',
   title: recordKindConfig[type]?.title ?? 'New health record',
   visitDate: new Date().toISOString().slice(0, 10),
   hospital: '',
   doctor: '',
   amount: '',
   notes: '',
+  attachments: [],
+  recordBelongsTo: '', // family member name
 });
 
 const serializeRecord = ({ icon, ...record }) => record;
@@ -83,31 +124,81 @@ const parseIncomingMessage = (message = '') => {
   if (!text) return {};
 
   const clean = text.replace(/\s+/g, ' ').trim();
-  const amountMatch = clean.match(/(?:amount|paid|bill|charge|payment|cost|total)[^\d]{0,20}\$?\s?(\d+(?:,\d{3})*(?:\.\d{1,2})?)/i)
-    || clean.match(/\$\s?(\d+(?:,\d{3})*(?:\.\d{1,2})?)/i)
-    || clean.match(/(?:rs|inr|usd|usd\s*)\.?\s?(\d+(?:,\d{3})*(?:\.\d{1,2})?)/i);
 
-  const dateMatch = clean.match(/(\d{4}-\d{2}-\d{2}|\d{1,2}[-/ ]\d{1,2}[-/ ]\d{2,4}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[\s\d,]{1,10}\d{2,4})/i);
-  const hospitalMatch = clean.match(/(?:hospital|clinic|medical center|center|facility)[^\n:]{0,30}[:\-]\s*([^\n.]+)/i)
-    || clean.match(/(?:at|in)\s+([A-Z][A-Za-z0-9. &'-]+(?:Hospital|Clinic|Center|Medical Center|Care|Diagnostics|Institute))/i);
-  const doctorMatch = clean.match(/(?:doctor|provider|physician|consultant|dr\.?|with)[^\n:]{0,25}[:\-]?\s*([A-Z][A-Za-z. '-]+(?:\s+[A-Z][A-Za-z. '-]+)*)/i);
+  // Enhanced amount extraction - handles multiple formats
+  const amountMatch = clean.match(/(?:amount|paid|bill|charge|payment|cost|total|fee)[^\d]{0,20}[\$₹]?\s?(\d+(?:[,]\d{3})*(?:\.\d{1,2})?)/i)
+    || clean.match(/[\$₹]\s?(\d+(?:[,]\d{3})*(?:\.\d{1,2})?)/i)
+    || clean.match(/(?:rs\.?|inr|₹|usd|aed|sgd)\s*\.?\s?(\d+(?:[,]\d{3})*(?:\.\d{1,2})?)/i);
 
-  const title = clean.match(/(?:appointment|visit|consultation|checkup|procedure|lab|scan|test|follow-up)[^\n:]{0,25}[:\-]?\s*([^\n]+)/i)?.[1]?.trim()
-    || 'Hospital visit';
+  // Enhanced date extraction - supports ISO, DD-MM-YYYY (Indian), DD/MM/YYYY, and text formats
+  const dateMatch = clean.match(/(\d{4}-\d{2}-\d{2})/) // ISO YYYY-MM-DD
+    || clean.match(/(\d{1,2}[-\/]\d{1,2}[-\/]\d{4})/) // DD-MM-YYYY or DD/MM/YYYY with 4-digit year
+    || clean.match(/(\d{1,2}[-\/]\d{1,2}[-\/]\d{2})/) // DD-MM-YY (assume 20YY)
+    || clean.match(/(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[\s\d,]{1,10}\d{2,4}/i); // Text dates
+
+  // Normalize extracted date to YYYY-MM-DD
+  let visitDate = new Date().toISOString().slice(0, 10);
+  if (dateMatch && dateMatch[0]) {
+    const parsed = parseDate(dateMatch[0]);
+    if (parsed) visitDate = parsed;
+  }
+
+  // Enhanced hospital/facility extraction - more flexible patterns
+  const hospitalMatch = clean.match(/(?:hospital|clinic|medical center|center|facility|diagnostics|lab|laboratory|urgent care|care center)[^\n:]{0,40}[:\-]?\s*([^\n,]+)/i)
+    || clean.match(/(?:at|in|visited)\s+([A-Z][A-Za-z0-9. &',-]+(?:Hospital|Clinic|Center|Medical Center|Care|Diagnostics|Institute|Urgent Care|Lab)[A-Za-z0-9. &',-]*)/i)
+    || clean.match(/^([A-Z][A-Za-z0-9. &',-]*(?:Hospital|Clinic|Center|Medical|Care|Diagnostics|Institute))/i);
+
+  // Enhanced doctor/provider extraction - handles titles and credentials
+  const doctorMatch = clean.match(/(?:doctor|provider|physician|consultant|dr\.?|with|seen by|examined by|treated by)[^\n:]{0,35}[:\-]?\s*(?:dr\.?\s+)?([A-Z][A-Za-z. '-]+(?:\s+[A-Z][A-Za-z. '-]+)*(?:\s+(?:MD|MS|MBBS|DDS|DMD|DO|BDS|BAMS))?)/i)
+    || clean.match(/([A-Z][A-Za-z. '-]+(?:\s+[A-Z][A-Za-z. '-]+)*)\s+(?:MD|MBBS|MS|DDS|DMD|DO|BDS|BAMS|BNYS)/i);
+
+  // Enhanced title extraction - medical-specific terms
+  const titleMatch = clean.match(/(?:appointment|visit|consultation|checkup|procedure|lab|scan|test|follow-up|report|result|x-ray|mri|ultrasound|blood test|ct scan)[^\n:]{0,40}[:\-]?\s*([^\n]+)/i)
+    || clean.match(/^([A-Za-z0-9\s]+(?:Report|Result|Test|Scan|Visit|Checkup))/i);
+
+  let title = titleMatch ? titleMatch[1]?.trim() : '';
+  if (title.length > 60) title = title.slice(0, 60).trim();
+  if (!title) title = 'Health visit';
 
   const value = amountMatch ? amountMatch[1].replace(/,/g, '') : '';
-  const hospital = hospitalMatch ? hospitalMatch[1].replace(/[.\n]+$/g, '').trim() : '';
-  const doctor = doctorMatch ? doctorMatch[1].replace(/^(?:dr\.?|doctor|provider|physician|consultant)\s+/i, '').replace(/[.\n]+$/g, '').trim() : '';
-  const visitDate = dateMatch ? dateMatch[1] : new Date().toISOString().slice(0, 10);
+  const hospital = hospitalMatch ? hospitalMatch[1].replace(/[.\n,]+$/g, '').trim() : '';
+  const doctor = doctorMatch ? doctorMatch[1].replace(/^(?:dr\.?|doctor|provider|physician|consultant)\s+/i, '').replace(/[.\n,]+$/g, '').trim() : '';
 
   return {
-    title: title.length > 60 ? title.slice(0, 60).trim() : title,
-    hospital: hospital || 'Hospital visit',
+    title,
+    hospital: hospital || 'Health facility',
     doctor: doctor || 'Provider confirmed',
     amount: value ? `$${Number(value).toFixed(2).replace(/\.00$/, '')}` : '',
-    visitDate: visitDate,
+    visitDate,
     notes: clean,
   };
+};
+
+// Helper function to parse dates in multiple formats
+const parseDate = (dateStr) => {
+  if (!dateStr) return null;
+
+  // Already ISO format
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+
+  // DD-MM-YYYY or DD/MM/YYYY
+  const dmyMatch = dateStr.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})$/);
+  if (dmyMatch) {
+    let [, d, m, y] = dmyMatch;
+    y = y.length === 2 ? '20' + y : y;
+    d = d.padStart(2, '0');
+    m = m.padStart(2, '0');
+    const date = new Date(`${y}-${m}-${d}`);
+    if (!isNaN(date.getTime())) return `${y}-${m}-${d}`;
+  }
+
+  // Try parsing as text date
+  const date = new Date(dateStr);
+  if (!isNaN(date.getTime())) {
+    return date.toISOString().slice(0, 10);
+  }
+
+  return null;
 };
 
 const parseFileText = (text = '') => {
@@ -117,17 +208,66 @@ const parseFileText = (text = '') => {
 };
 
 const readPdfText = async (file) => {
-  const buffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
-  let extracted = '';
+  try {
+    const buffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+    let extracted = '';
+    let textQuality = 0; // Track if PDF has extractable text
 
-  for (let pageIndex = 1; pageIndex <= pdf.numPages; pageIndex += 1) {
-    const page = await pdf.getPage(pageIndex);
-    const content = await page.getTextContent();
-    extracted += content.items.map((item) => item.str).join(' ') + '\n';
+    // Extract text from all pages
+    for (let pageIndex = 1; pageIndex <= pdf.numPages; pageIndex += 1) {
+      try {
+        const page = await pdf.getPage(pageIndex);
+        const content = await page.getTextContent();
+        const pageText = content.items.map((item) => item.str).join(' ').trim();
+        
+        if (pageText) {
+          textQuality += pageText.split(/\s+/).length; // Count words
+          extracted += pageText + '\n';
+        }
+      } catch (pageError) {
+        console.warn(`Could not extract text from PDF page ${pageIndex}`, pageError);
+      }
+    }
+
+    // If minimal text extracted, PDF might be scanned - use OCR
+    if (textQuality < 50) {
+      console.log('PDF appears to be scanned, attempting OCR...');
+      try {
+        // Convert first page to image for OCR
+        const page = await pdf.getPage(1);
+        const canvas = document.createElement('canvas');
+        const scale = 2;
+        const viewport = page.getViewport({ scale });
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+
+        const context = canvas.getContext('2d');
+        await page.render({ canvasContext: context, viewport }).promise;
+
+        // Convert canvas to blob and run OCR
+        return new Promise((resolve) => {
+          canvas.toBlob(async (blob) => {
+            try {
+              const { data } = await Tesseract.recognize(blob, 'eng', { logger: () => {} });
+              resolve(data?.text || extracted || '');
+            } catch (ocrError) {
+              console.warn('OCR failed, falling back to extracted text', ocrError);
+              resolve(extracted);
+            }
+          });
+        });
+      } catch (ocrError) {
+        console.warn('Could not perform OCR on PDF', ocrError);
+        return extracted;
+      }
+    }
+
+    return extracted;
+  } catch (error) {
+    console.error('PDF text extraction failed:', error);
+    throw error;
   }
-
-  return extracted;
 };
 
 const handleUploadedDocument = async (file, setForm) => {
@@ -135,19 +275,44 @@ const handleUploadedDocument = async (file, setForm) => {
 
   try {
     let text = '';
-    if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
-      text = await readPdfText(file);
-    } else if (file.type.startsWith('image/')) {
-      const { data } = await Tesseract.recognize(file, 'eng', { logger: () => {} });
-      text = data?.text || '';
-    }
+    let extractionMethod = 'unknown';
 
-    const parsed = parseFileText(text);
-    if (Object.keys(parsed).length === 0) {
+    try {
+      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+        text = await readPdfText(file);
+        extractionMethod = 'pdf';
+      } else if (file.type.startsWith('image/')) {
+        const { data } = await Tesseract.recognize(file, 'eng', { logger: () => {} });
+        text = data?.text || '';
+        extractionMethod = 'ocr';
+      }
+    } catch (extractError) {
+      console.error(`Extraction (${extractionMethod}) failed:`, extractError);
+      // Fallback: just note the filename
       setForm((current) => ({ ...current, notes: `Imported file: ${file.name}` }));
       return;
     }
 
+    // If no text was extracted, use filename as fallback
+    if (!text || text.trim().length < 5) {
+      console.warn('Extracted text too short, using filename');
+      setForm((current) => ({ ...current, notes: `Imported file: ${file.name}` }));
+      return;
+    }
+
+    // Parse the extracted text
+    const parsed = parseFileText(text);
+    
+    if (Object.keys(parsed).length === 0 || !parsed.title) {
+      // Parsing failed - use filename and original text
+      setForm((current) => ({ 
+        ...current, 
+        notes: `Imported from ${file.name}:\n${text.substring(0, 200)}...` 
+      }));
+      return;
+    }
+
+    // Successfully parsed - populate form
     setForm((current) => ({
       ...current,
       ...parsed,
@@ -158,8 +323,11 @@ const handleUploadedDocument = async (file, setForm) => {
       visitDate: parsed.visitDate || current.visitDate,
       notes: parsed.notes || current.notes,
     }));
+
+    console.log(`Successfully extracted data from ${file.name} (method: ${extractionMethod})`);
   } catch (error) {
-    console.error('Could not parse uploaded file', error);
+    console.error('Could not process uploaded file:', error);
+    setForm((current) => ({ ...current, notes: `Failed to process file: ${file.name}` }));
   }
 };
 
@@ -167,14 +335,13 @@ function App() {
   const [authenticated, setAuthenticated] = useState(false);
   const [authReady, setAuthReady] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
-  const [showConsentModal, setShowConsentModal] = useState(false);
-  const [userConsent, setUserConsent] = useState(null);
-  const [showTimeoutWarning, setShowTimeoutWarning] = useState(false);
-  const [timeoutCountdown, setTimeoutCountdown] = useState(900); // 15 minutes in seconds
   const [tab, setTab] = useState('Home');
   const [showAdd, setShowAdd] = useState(false);
-  const [showNotice, setShowNotice] = useState(false);
+  const [toastMessage, setToastMessage] = useState(null);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showReadNotifications, setShowReadNotifications] = useState(false);
+  const [unreadNotificationPage, setUnreadNotificationPage] = useState(1);
+  const [readNotificationPage, setReadNotificationPage] = useState(1);
   const [showSearch, setShowSearch] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [settingsPage, setSettingsPage] = useState(null);
@@ -184,6 +351,7 @@ function App() {
   const [showTimeline, setShowTimeline] = useState(false);
   const [timelineRecord, setTimelineRecord] = useState(null);
   const [recordDetail, setRecordDetail] = useState(null);
+  const [editingRecord, setEditingRecord] = useState(null);
   const [activePerson, setActivePerson] = useState('My profile');
   const [familyList, setFamilyList] = useState([]);
   const [profileDetails, setProfileDetails] = useState({
@@ -194,20 +362,12 @@ function App() {
     height: '',
     weight: '',
     emergencyContact: '',
+    isPrimaryHolder: true,
   });
   const [items, setItems] = useState([]);
-  const sessionTimeout = useRef(null);
-  const [authError, setAuthError] = useState('');
-  const [biometricCredentials, setBiometricCredentials] = useState([]);
-  const [showBiometricEnroll, setShowBiometricEnroll] = useState(false);
-  // MFA state
-  const [mfaEnabled, setMFAEnabled] = useState(false);
-  const [mfaMethod, setMFAMethod] = useState('sms');
-  const [showMFASetup, setShowMFASetup] = useState(false);
-  const [showMFAVerify, setShowMFAVerify] = useState(false);
-  const [showMFASettings, setShowMFASettings] = useState(false);
-  const [mfaSettings, setMFASettings] = useState(null);
-  const [trustedDeviceId, setTrustedDeviceId] = useState(null);
+  const [notifications, setNotifications] = useState([]);
+  // Avatar should always show owner/login user initials, not the selected person
+  const ownerInitials = profileDetails.fullName ? profileDetails.fullName.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase() : '';
   const activeInitials = activePerson.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase();
 
   useEffect(() => onAuthStateChanged(auth, (user) => {
@@ -216,117 +376,111 @@ function App() {
     setAuthReady(true);
   }), []);
 
-  // Check for consent on authentication
-  useEffect(() => {
-    if (authenticated && currentUser) {
-      const saved = localStorage.getItem('consentAccepted');
-      if (!saved) {
-        setShowConsentModal(true);
-      } else {
-        setUserConsent(JSON.parse(saved));
-      }
+  const formatNotificationDate = (date) => {
+    if (!date) return 'Unknown date';
+    let dateObj = date;
+    if (date.toDate && typeof date.toDate === 'function') {
+      dateObj = date.toDate();
+    } else if (!(date instanceof Date)) {
+      dateObj = new Date(date);
     }
-  }, [authenticated, currentUser]);
-
-  // Load biometric credentials on authentication
-  useEffect(() => {
-    if (authenticated && currentUser) {
-      const loadBiometricCredentials = async () => {
-        try {
-          const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-          if (userDoc.exists() && userDoc.data().biometricCredentials) {
-            setBiometricCredentials(userDoc.data().biometricCredentials || []);
-          }
-        } catch (error) {
-          console.warn('Could not load biometric credentials:', error);
-        }
-      };
-      loadBiometricCredentials();
-    }
-  }, [authenticated, currentUser]);
-
-  // Load MFA settings on authentication
-  useEffect(() => {
-    if (authenticated && currentUser) {
-      const loadMFASettings = async () => {
-        try {
-          const settings = await getMFASettings(currentUser.uid);
-          if (settings) {
-            setMFASettings(settings);
-            setMFAEnabled(settings.enabled || false);
-            setMFAMethod(settings.method || 'sms');
-          }
-          
-          // Check if device is already trusted
-          const trusted = await isDeviceTrusted(currentUser.uid);
-          if (trusted) {
-            setTrustedDeviceId(trusted.deviceId);
-          }
-        } catch (error) {
-          console.warn('Could not load MFA settings:', error);
-        }
-      };
-      loadMFASettings();
-    }
-  }, [authenticated, currentUser]);
-
-  // Initialize session timeout on authentication
-  useEffect(() => {
-    if (authenticated && currentUser) {
-      sessionTimeout.current = new SessionTimeoutManager();
-      
-      // On warning (14 minutes)
-      sessionTimeout.current.onWarning = () => {
-        setShowTimeoutWarning(true);
-        // Start countdown from 60 seconds
-        let countdown = 60;
-        const interval = setInterval(() => {
-          setTimeoutCountdown(countdown);
-          countdown--;
-          if (countdown < 0) clearInterval(interval);
-        }, 1000);
-      };
-
-      // On timeout (15 minutes)
-      sessionTimeout.current.onTimeout = () => {
-        setShowTimeoutWarning(false);
-        signOut(auth);
-        setAuthenticated(false);
-        setAuthError('Your session has expired. Please log in again.');
-      };
-
-      sessionTimeout.current.start();
-
-      return () => {
-        if (sessionTimeout.current) {
-          sessionTimeout.current.stop();
-        }
-      };
-    }
-  }, [authenticated, currentUser]);
-
-  // Reset session timer on user activity
-  useEffect(() => {
-    if (!authenticated || !sessionTimeout.current) return;
-
-    const events = ['mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
     
-    const handleActivity = () => {
-      if (sessionTimeout.current && !showTimeoutWarning) {
-        sessionTimeout.current.reset();
-      }
-    };
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today.getTime() - 86400000);
+    const notifDate = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate());
+    
+    let dateStr = '';
+    if (notifDate.getTime() === today.getTime()) {
+      dateStr = 'Today';
+    } else if (notifDate.getTime() === yesterday.getTime()) {
+      dateStr = 'Yesterday';
+    } else {
+      dateStr = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: dateObj.getFullYear() !== now.getFullYear() ? 'numeric' : undefined });
+    }
+    
+    const timeStr = dateObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+    return `${dateStr}, ${timeStr}`;
+  };
 
-    events.forEach(event => {
-      document.addEventListener(event, handleActivity, true);
-    });
+  const getTimeAgo = (date) => {
+    if (!date) return 'just now';
+    let dateObj = date;
+    if (date.toDate && typeof date.toDate === 'function') {
+      dateObj = date.toDate();
+    } else if (!(date instanceof Date)) {
+      dateObj = new Date(date);
+    }
+    const now = new Date();
+    const diffMs = now - dateObj;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
 
-    return () => {
-      events.forEach(event => {
-        document.removeEventListener(event, handleActivity, true);
-      });
-    };
-  }, [authenticated, showTimeoutWarning]);
+    if (diffMins < 1) return 'just now';
+    if (diffMins < 60) return `${diffMins} min ago`;
+    if (diffHours < 24) return `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays} days ago`;
+    return dateObj.toLocaleDateString();
+  };
+
+  const convertTimestamp = (timestamp) => {
+    if (!timestamp) return new Date();
+    if (timestamp.toDate && typeof timestamp.toDate === 'function') {
+      return timestamp.toDate();
+    }
+    return timestamp instanceof Date ? timestamp : new Date(timestamp);
+  };
+
+  const loadNotifications = async () => {
+    try {
+      const notificationsSnapshot = await getDocs(collection(db, 'users', currentUser.uid, 'notifications'));
+      const loaded = notificationsSnapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          time: formatNotificationDate(data.createdAt),
+        };
+      }).sort((a, b) => convertTimestamp(b.createdAt) - convertTimestamp(a.createdAt));
+      setNotifications(loaded);
+    } catch (error) {
+      console.error('Could not load notifications', error);
+    }
+  };
+
+  const addNotification = async (title, detail) => {
+    if (!currentUser) return;
+    try {
+      const now = new Date();
+      const notification = {
+        title,
+        detail,
+        unread: true,
+        createdAt: now,
+      };
+      const docRef = await addDoc(collection(db, 'users', currentUser.uid, 'notifications'), notification);
+      const newNotif = {
+        id: docRef.id,
+        ...notification,
+        time: formatNotificationDate(now),
+      };
+      setNotifications(current => [newNotif, ...current]);
+    } catch (error) {
+      console.error('Could not add notification', error);
+    }
+  };
+
+  const markNotificationAsRead = async (notificationId) => {
+    if (!currentUser) return;
+    try {
+      await updateDoc(doc(db, 'users', currentUser.uid, 'notifications', notificationId), { unread: false });
+      setNotifications(current => current.map(notif => notif.id === notificationId ? { ...notif, unread: false } : notif));
+    } catch (error) {
+      console.error('Could not mark notification as read', error);
+    }
+  };
 
   useEffect(() => {
     if (!currentUser) return undefined;
@@ -342,16 +496,27 @@ function App() {
 
         if (profileSnapshot.exists()) {
           const profile = profileSnapshot.data();
-          setProfileDetails(current => ({ ...current, ...profile }));
+          setProfileDetails(current => ({ ...current, ...profile, isPrimaryHolder: true }));
           if (profile.fullName) setActivePerson(profile.fullName);
-        } else if (currentUser.displayName) {
-          setProfileDetails(current => ({ ...current, fullName: currentUser.displayName }));
-          setActivePerson(currentUser.displayName);
+        } else {
+          if (currentUser.displayName) {
+            setProfileDetails(current => ({ ...current, fullName: currentUser.displayName, isPrimaryHolder: true }));
+            setActivePerson(currentUser.displayName);
+          }
+          // First sign-in after registration: send the user straight to their profile details form.
+          setTab('Profile');
+          setEditProfile(true);
         }
         setFamilyList(familySnapshot.docs.map(snapshot => ({ id: snapshot.id, ...snapshot.data() })));
         setItems(recordsSnapshot.docs.map(snapshot => hydrateRecord(snapshot.id, snapshot.data())));
-
-        if (!profileSnapshot.exists()) await setDoc(doc(userRef, 'profile', 'details'), { fullName: currentUser.displayName || '' }, { merge: true });
+        
+        const isNewUser = !profileSnapshot.exists();
+        if (isNewUser) {
+          await setDoc(doc(userRef, 'profile', 'details'), { fullName: currentUser.displayName || '', isPrimaryHolder: true }, { merge: true });
+          await addNotification('Welcome to HealthGene', 'Your health profile is now active. Start adding your health records to get organized.');
+        }
+        
+        await loadNotifications();
       } catch (error) {
         console.error('Could not load Firestore data', error);
       }
@@ -373,48 +538,89 @@ function App() {
       doctor: details?.doctor?.trim() || '',
       amount: details?.amount?.trim() || '',
       notes: details?.notes?.trim() || '',
+      attachments: details?.attachments || [],
+      recordBelongsTo: details?.recordBelongsTo || activePerson || '',
+      healthNodeType: healthNodeTypes[details?.healthNodeType] ? details.healthNodeType : getHealthNodeType(details),
     };
 
-    // Check rate limiting
-    if (!firestoreLimiter.isAllowed()) {
-      setAuthError('Too many requests. Please wait a moment before saving another record.');
-      return;
-    }
-
     setItems([record, ...items]);
-    if (currentUser) addDoc(collection(db, 'users', currentUser.uid, 'records'), serializeRecord(record)).catch(error => console.error('Could not save record', error));
+    if (currentUser) {
+      addDoc(collection(db, 'users', currentUser.uid, 'records'), serializeRecord(record)).catch(error => console.error('Could not save record', error));
+      addNotification('New health record added', `${record.title} has been saved to your timeline.`);
+    }
+    
+    // Show toast with family member name
+    const familyMemberName = record.recordBelongsTo || 'Your';
+    setToastMessage(`Saved ${familyMemberName}'s health record`);
+    
     setShowAdd(false);
-    setShowNotice(true);
-    setTimeout(() => setShowNotice(false), 2800);
+    setTimeout(() => setToastMessage(null), 2800);
+  };
+
+  const updateRecord = async (recordId, updates) => {
+    // Update items and capture the updated record
+    let updatedRecord;
+    setItems(current => {
+      const newItems = current.map(item => {
+        if (item.id === recordId) {
+          updatedRecord = { ...item, ...updates };
+          return updatedRecord;
+        }
+        return item;
+      });
+      return newItems;
+    });
+    
+    // Update recordDetail to show the latest changes
+    if (updatedRecord) {
+      setRecordDetail(updatedRecord);
+    }
+    
+    // Update Firestore
+    if (currentUser) {
+      await updateDoc(doc(db, 'users', currentUser.uid, 'records', recordId), serializeRecord(updates)).catch(error => console.error('Could not update record', error));
+    }
+    
+    // Close edit mode (but keep detail view open to show updated record)
+    setEditingRecord(null);
+  };
+
+  const deleteRecord = async (recordId) => {
+    // Remove from items state
+    setItems(current => current.filter(item => item.id !== recordId));
+    
+    // Close detail and editing views
+    setRecordDetail(null);
+    setEditingRecord(null);
+    setTimelineRecord(null);
+    
+    // Delete from Firestore
+    if (currentUser) {
+      await deleteDoc(doc(db, 'users', currentUser.uid, 'records', recordId)).catch(error => console.error('Could not delete record', error));
+      await addNotification('Record deleted', 'The health record has been permanently removed.');
+    }
   };
 
   const saveProfile = async (details) => {
-    setProfileDetails(details);
+    const profileWithPrimary = { ...details, isPrimaryHolder: true };
+    setProfileDetails(profileWithPrimary);
     setActivePerson(details.fullName);
     setEditProfile(false);
-    if (currentUser) await setDoc(doc(db, 'users', currentUser.uid, 'profile', 'details'), details, { merge: true });
+    if (currentUser) await setDoc(doc(db, 'users', currentUser.uid, 'profile', 'details'), profileWithPrimary, { merge: true });
   };
 
   const addFamilyMember = async (member) => {
-    // Check rate limiting
-    if (!firestoreLimiter.isAllowed()) {
-      setAuthError('Too many requests. Please wait a moment before adding another member.');
-      return;
-    }
-
-    setFamilyList(current => [...current, member]);
+    const familyMember = { ...member, isPrimaryHolder: false };
+    setFamilyList(current => [...current, familyMember]);
     setActivePerson(member.name);
     setShowAddFamily(false);
-    if (currentUser) await setDoc(doc(collection(db, 'users', currentUser.uid, 'familyMembers')), member);
+    if (currentUser) {
+      await setDoc(doc(collection(db, 'users', currentUser.uid, 'familyMembers')), familyMember);
+      await addNotification('Family member added', `${member.name} has been added to your family health space.`);
+    }
   };
 
   const updateFamilyMember = async (updatedMember, originalName) => {
-    // Check rate limiting
-    if (!firestoreLimiter.isAllowed()) {
-      setAuthError('Too many requests. Please wait a moment before updating.');
-      return;
-    }
-
     setFamilyList(current => current.map(member => member.name === originalName ? updatedMember : member));
     setActivePerson(updatedMember.name);
     setEditingMember(null);
@@ -422,12 +628,6 @@ function App() {
   };
 
   const deleteFamilyMember = async (member) => {
-    // Check rate limiting
-    if (!firestoreLimiter.isAllowed()) {
-      setAuthError('Too many requests. Please wait a moment before deleting.');
-      return;
-    }
-
     const remaining = familyList.filter(item => item.name !== member.name);
     setFamilyList(remaining);
     setActivePerson(remaining[0]?.name || '');
@@ -435,89 +635,36 @@ function App() {
     if (currentUser && member.id) await deleteDoc(doc(db, 'users', currentUser.uid, 'familyMembers', member.id));
   };
 
-  const handleConsentAccept = async () => {
-    // Check rate limiting
-    if (!firestoreLimiter.isAllowed()) {
-      console.warn('Rate limit: Could not save consent');
-      return;
-    }
-
-    setShowConsentModal(false);
-    
-    // Save consent to Firestore
-    if (currentUser) {
-      try {
-        await setDoc(
-          doc(db, 'users', currentUser.uid),
-          {
-            consentAccepted: true,
-            consentTimestamp: new Date().toISOString(),
-            consentVersion: '1.0',
-          },
-          { merge: true }
-        );
-      } catch (error) {
-        console.error('Error saving consent to Firestore:', error);
-      }
-    }
-    
-    setUserConsent(JSON.parse(localStorage.getItem('consentAccepted')));
-  };
-
-  const handleConsentDecline = () => {
-    console.warn('User declined consent');
-    setShowConsentModal(false);
-  };
-
   if (!authReady) return null;
-  if (!authenticated) return <AuthScreen biometricCredentials={biometricCredentials} currentUser={currentUser} />;
+  if (!authenticated) return <AuthScreen />;
 
   return <main className="app-shell">
-    <ConsentModal
-      isOpen={showConsentModal}
-      onAccept={handleConsentAccept}
-      onDecline={handleConsentDecline}
-    />
-    <SessionTimeoutWarning
-      isOpen={showTimeoutWarning}
-      countdown={timeoutCountdown}
-      onContinue={() => {
-        setShowTimeoutWarning(false);
-        if (sessionTimeout.current) {
-          sessionTimeout.current.reset();
-        }
-      }}
-      onLogout={() => {
-        signOut(auth);
-        setShowTimeoutWarning(false);
-      }}
-    />
     <section className="mobile-app">
       <header className="topbar">
         <div className="brand"><span className="brand-mark"><HeartPulse size={17}/></span><span>MyFamilyHealth</span></div>
-        <div className="top-actions"><button className="icon-button" onClick={() => setShowSearch(open => !open)} aria-label="Search" aria-expanded={showSearch}><Search size={20}/></button><button className="avatar" onClick={() => setTab('Profile')} aria-label={`${activePerson} profile`}>{activeInitials}</button></div>
+        <div className="top-actions"><button className="icon-button" onClick={() => setShowSearch(open => !open)} aria-label="Search" aria-expanded={showSearch}><Search size={20}/></button><button className="avatar" onClick={() => setTab('Profile')} aria-label={`${profileDetails.fullName} profile`}>{ownerInitials}</button></div>
       </header>
 
       {showSearch && <SearchPanel searchTerm={searchTerm} setSearchTerm={setSearchTerm} submitSearch={() => { setShowSearch(false); setTab('Records'); }} chooseExample={(example) => { setSearchTerm(example); setShowSearch(false); setTab('Records'); }} />}
 
       <div className="content">
-        {tab === 'Home' && (showTimeline ? <TimelinePage items={items} selectedRecord={timelineRecord} onSelectRecord={setTimelineRecord} onBack={() => { setShowTimeline(false); setTimelineRecord(null); }} /> : <HomeScreen activePerson={activePerson} setActivePerson={setActivePerson} items={items} onAdd={() => setShowAdd(true)} onViewTimeline={() => setShowTimeline(true)} showNotifications={showNotifications} toggleNotifications={() => setShowNotifications(open => !open)} />)}
-        {tab === 'Records' && (recordDetail ? <RecordDetailPage record={recordDetail} onBack={() => setRecordDetail(null)} /> : <RecordsScreen items={items} searchTerm={searchTerm} setSearchTerm={setSearchTerm} onAdd={() => setShowAdd(true)} onOpenRecord={setRecordDetail} />)}
-        {tab === 'Family' && (showAddFamily ? <AddFamilyMemberPage onBack={() => setShowAddFamily(false)} onSave={addFamilyMember} /> : editingMember ? <EditFamilyMemberPage member={editingMember} onBack={() => setEditingMember(null)} onSave={(updatedMember) => updateFamilyMember(updatedMember, editingMember.name)} onDelete={() => deleteFamilyMember(editingMember)} /> : <FamilyScreen activePerson={activePerson} setActivePerson={setActivePerson} familyList={familyList} onAddMember={() => setShowAddFamily(true)} onOpenMember={setEditingMember} />)}
-        {tab === 'Profile' && (editProfile ? <EditProfilePage details={profileDetails} onBack={() => setEditProfile(false)} onSave={saveProfile} /> : settingsPage ? <SettingsPage page={settingsPage} activePerson={activePerson} items={items} onBack={() => setSettingsPage(null)} currentUser={currentUser} biometricCredentials={biometricCredentials} mfaEnabled={mfaEnabled} mfaMethod={mfaMethod} mfaSettings={mfaSettings} onShowMFASetup={() => setShowMFASetup(true)} onShowMFASettings={() => setShowMFASettings(true)} /> : <ProfileScreen activePerson={activePerson} profileDetails={profileDetails} onLogout={() => signOut(auth)} openSettings={setSettingsPage} openEditProfile={() => setEditProfile(true)} />)}
+        {tab === 'Home' && (showTimeline ? (editingRecord ? <EditRecordPage record={editingRecord} onBack={() => setEditingRecord(null)} onSave={(updates) => updateRecord(editingRecord.id, updates)} primaryMemberName={profileDetails.fullName} familyList={familyList} /> : <TimelinePage items={items} selectedRecord={timelineRecord} onSelectRecord={setTimelineRecord} onEdit={() => setEditingRecord(timelineRecord)} onDelete={deleteRecord} onBack={() => { setShowTimeline(false); setTimelineRecord(null); }} activePerson={activePerson} primaryMemberName={profileDetails.fullName} />) : recordDetail ? (editingRecord ? <EditRecordPage record={editingRecord} onBack={() => setEditingRecord(null)} onSave={(updates) => updateRecord(editingRecord.id, updates)} primaryMemberName={profileDetails.fullName} familyList={familyList} /> : <RecordDetailPage record={recordDetail} onEdit={() => setEditingRecord(recordDetail)} onDelete={deleteRecord} onBack={() => setRecordDetail(null)} />) : <HomeScreen activePerson={activePerson} setActivePerson={setActivePerson} primaryMemberName={profileDetails.fullName} familyList={familyList} items={items} notifications={notifications} onMarkNotificationAsRead={markNotificationAsRead} onAdd={() => setShowAdd(true)} onViewTimeline={() => setShowTimeline(true)} onOpenRecord={setRecordDetail} showNotifications={showNotifications} showReadNotifications={showReadNotifications} setShowReadNotifications={setShowReadNotifications} unreadNotificationPage={unreadNotificationPage} setUnreadNotificationPage={setUnreadNotificationPage} readNotificationPage={readNotificationPage} setReadNotificationPage={setReadNotificationPage} toggleNotifications={() => setShowNotifications(open => !open)} />)}
+        {tab === 'Records' && (recordDetail ? (editingRecord ? <EditRecordPage record={editingRecord} onBack={() => setEditingRecord(null)} onSave={(updates) => updateRecord(editingRecord.id, updates)} primaryMemberName={profileDetails.fullName} familyList={familyList} /> : <RecordDetailPage record={recordDetail} onEdit={() => setEditingRecord(recordDetail)} onDelete={deleteRecord} onBack={() => setRecordDetail(null)} />) : <RecordsScreen items={items} searchTerm={searchTerm} setSearchTerm={setSearchTerm} onAdd={() => setShowAdd(true)} onOpenRecord={setRecordDetail} activePerson={activePerson} primaryMemberName={profileDetails.fullName} />)}
+        {tab === 'Family' && (showAddFamily ? <AddFamilyMemberPage onBack={() => setShowAddFamily(false)} onSave={addFamilyMember} /> : editingMember ? <EditFamilyMemberPage member={editingMember} onBack={() => setEditingMember(null)} onSave={(updatedMember) => updateFamilyMember(updatedMember, editingMember.name)} onDelete={() => deleteFamilyMember(editingMember)} /> : <FamilyScreen activePerson={activePerson} setActivePerson={setActivePerson} primaryMemberName={profileDetails.fullName} familyList={familyList} items={items} onAddMember={() => setShowAddFamily(true)} onOpenMember={setEditingMember} />)}
+        {tab === 'Profile' && (editProfile ? <EditProfilePage details={profileDetails} onBack={() => setEditProfile(false)} onSave={saveProfile} /> : settingsPage ? <SettingsPage page={settingsPage} activePerson={activePerson} familyList={familyList} items={items} onBack={() => setSettingsPage(null)} /> : <ProfileScreen activePerson={activePerson} profileDetails={profileDetails} onLogout={() => signOut(auth)} openSettings={setSettingsPage} openEditProfile={() => setEditProfile(true)} />)}
       </div>
 
       <nav className="bottom-nav">
-        {[['Home', Home], ['Records', FileText], ['Family', Users], ['Profile', Settings]].map(([label, Icon]) => <button key={label} onClick={() => { setSettingsPage(null); setEditProfile(false); setShowAddFamily(false); setEditingMember(null); setShowTimeline(false); setTimelineRecord(null); setRecordDetail(null); setTab(label); }} className={tab === label ? 'nav-active' : ''}><Icon size={20}/><span>{label}</span></button>)}
+        {[['Home', Home], ['Records', FileText], ['Family', Users], ['Profile', Settings]].map(([label, Icon]) => <button key={label} onClick={() => { setSettingsPage(null); setEditProfile(false); setShowAddFamily(false); setEditingMember(null); setShowTimeline(false); setTimelineRecord(null); setRecordDetail(null); setEditingRecord(null); setTab(label); }} className={tab === label ? 'nav-active' : ''}><Icon size={20}/><span>{label}</span></button>)}
       </nav>
 
-      {showAdd && <AddSheet close={() => setShowAdd(false)} addRecord={addRecord} />}
-      {showNotice && <div className="toast"><ShieldCheck size={18}/>Saved privately to your health timeline</div>}
+      {showAdd && <AddHealthRecordPage close={() => setShowAdd(false)} addRecord={addRecord} primaryMemberName={profileDetails.fullName} familyList={familyList} />}
+      {toastMessage && <div className="toast"><ShieldCheck size={18}/>{toastMessage}</div>}
     </section>
   </main>;
 }
 
-function AuthScreen({ biometricCredentials = [], currentUser = null }) {
+function AuthScreen() {
   const [screen, setScreen] = useState('welcome');
   const [phone, setPhone] = useState('');
   const [countryCode, setCountryCode] = useState('+91');
@@ -526,9 +673,7 @@ function AuthScreen({ biometricCredentials = [], currentUser = null }) {
   const [legalPage, setLegalPage] = useState(null);
   const [authError, setAuthError] = useState('');
   const [confirmationResult, setConfirmationResult] = useState(null);
-  const [userMFAEnabled, setUserMFAEnabled] = useState(false);
-  const [userMFAMethod, setUserMFAMethod] = useState('sms');
-  const [mfaSessionId, setMFASessionId] = useState(null);
+  const [authLoading, setAuthLoading] = useState(false);
   const recaptchaRef = useRef(null);
   const title = screen === 'signup' ? 'Create your account' : 'Welcome back';
   const showAuthError = (error) => {
@@ -553,6 +698,7 @@ function AuthScreen({ biometricCredentials = [], currentUser = null }) {
   const submitPhone = async (event) => {
     event.preventDefault();
     setAuthError('');
+    setAuthLoading(true);
     try {
       if (!recaptchaRef.current) {
         recaptchaRef.current = new RecaptchaVerifier(auth, 'recaptcha-container', { size: 'invisible' });
@@ -564,60 +710,20 @@ function AuthScreen({ biometricCredentials = [], currentUser = null }) {
       showAuthError(error);
       recaptchaRef.current?.clear();
       recaptchaRef.current = null;
+    } finally {
+      setAuthLoading(false);
     }
   };
   const verifyCode = async (event) => {
     event.preventDefault();
     setAuthError('');
+    setAuthLoading(true);
     try {
-      const userCredential = await confirmationResult.confirm(code);
-      
-      // Check if user has MFA enabled
-      if (userCredential.user) {
-        const mfaSettings = await getMFASettings(userCredential.user.uid);
-        
-        if (mfaSettings && mfaSettings.enabled) {
-          // MFA is enabled - require OTP verification
-          setUserMFAEnabled(true);
-          setUserMFAMethod(mfaSettings.method || 'sms');
-          setMFASessionId(`session_${Date.now()}`);
-          setScreen('mfa-verify');
-        } else {
-          // No MFA - direct access
-          setScreen('success');
-        }
-      }
+      await confirmationResult.confirm(code);
     } catch (error) {
       showAuthError(error);
-    }
-  };
-
-  const handleMFAVerifySuccess = async (result) => {
-    try {
-      if (result.rememberDevice && mfaSessionId) {
-        // Trust this device for 30 days
-        await trustDevice(currentUser?.uid || auth.currentUser?.uid, userMFAMethod);
-      }
-      // MFA verification successful
-      setScreen('success');
-    } catch (error) {
-      setAuthError('Failed to trust device. Continuing without device trust.');
-      setScreen('success');
-    }
-  };
-
-  const handleMFAVerifyFailed = (result) => {
-    setAuthError(result.message || 'MFA verification failed. Please try again.');
-  };
-
-  const handleResendOTP = async () => {
-    try {
-      // In production, call sendOTP from mfaHelper
-      // For now, show message
-      setAuthError(''); // Clear error
-      alert('OTP resent to ' + userMFAMethod === 'sms' ? 'your phone' : 'your email');
-    } catch (error) {
-      setAuthError('Failed to resend OTP');
+    } finally {
+      setAuthLoading(false);
     }
   };
 
@@ -630,37 +736,11 @@ function AuthScreen({ biometricCredentials = [], currentUser = null }) {
     <p className="auth-privacy"><LockKeyhole size={14}/>Private, encrypted, and always yours</p>
   </section></main>;
 
-  if (screen === 'mfa-verify') return <main className="auth-shell"><section className="auth-card form-card verify-card">
-    <button className="back-button" onClick={() => { setScreen('verify'); setCode(''); }}><ArrowLeft size={20}/></button><AuthBrand compact />
-    <MFAVerification
-      userId={auth.currentUser?.uid}
-      sessionId={mfaSessionId}
-      method={userMFAMethod}
-      onVerifySuccess={handleMFAVerifySuccess}
-      onVerifyFailed={handleMFAVerifyFailed}
-      onUseBackupCode={handleMFAVerifySuccess}
-      onResendOTP={handleResendOTP}
-      onCancel={() => { setScreen('verify'); setCode(''); }}
-    />
-  </section></main>;
-
-  if (screen === 'success') return <main className="auth-shell"><section className="auth-card welcome-card">
-    <AuthBrand />
-    <div style={{ textAlign: 'center', padding: '40px 20px' }}>
-      <div style={{ fontSize: '48px', marginBottom: '20px' }}>✓</div>
-      <h1 style={{ marginBottom: '10px' }}>Access Granted!</h1>
-      <p style={{ color: '#666', marginBottom: '30px' }}>Welcome back to MyFamilyHealth</p>
-      <div style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>
-        <div style={{ width: '30px', height: '30px', border: '3px solid #ddd', borderTop: '3px solid #007bff', borderRadius: '50%' }} />
-      </div>
-    </div>
-  </section></main>;
-
   if (screen === 'verify') return <main className="auth-shell"><section className="auth-card form-card verify-card">
     <button className="back-button" onClick={() => setScreen('signup')}><ArrowLeft size={20}/></button><AuthBrand compact />
     <div className="form-heading"><div className="verification-icon"><Smartphone size={25}/></div><h1>Check your messages</h1><p>We sent a 6-digit code to <b>{phone ? `${countryCode} ${phone}` : `${countryCode} (555) 000-0000`}</b>.</p></div>
     <form onSubmit={verifyCode}><label className="field-label">VERIFICATION CODE</label><input aria-label="Verification code" className="code-input" inputMode="numeric" maxLength="6" placeholder="• • • • • •" value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ''))} autoFocus/>
-      <button className="auth-primary" type="submit">Verify and continue <Check size={18}/></button></form>
+      <button className="auth-primary" type="submit" disabled={authLoading}>{authLoading ? 'Verifying code...' : 'Verify and continue'} {!authLoading && <Check size={18}/>}</button></form>
     {authError && <p className="auth-error">{authError}</p>}
     <button className="resend-button" onClick={() => setCode('')}>Didn't receive a code? <b>Resend</b></button><button className="change-number" onClick={() => setScreen('signup')}>Use a different number</button>
   </section></main>;
@@ -668,21 +748,10 @@ function AuthScreen({ biometricCredentials = [], currentUser = null }) {
   return <main className="auth-shell"><section className="auth-card form-card">
     <button className="back-button" onClick={() => setScreen('welcome')}><ArrowLeft size={20}/></button><AuthBrand compact />
     <div className="form-heading"><p className="eyebrow">{screen === 'signup' ? 'WELCOME TO MYFAMILYHEALTH' : 'YOUR HEALTH SPACE'}</p><h1>{title}</h1><p>{screen === 'signup' ? 'Start building your secure health history.' : 'Sign in to see your health story.'}</p></div>
-    {screen === 'signin' && biometricCredentials.length > 0 && (
-      <>
-        <BiometricAuth
-          userCredentials={biometricCredentials}
-          onSuccess={() => {}}
-          onFallback={() => setScreen('signin')}
-          disabled={false}
-        />
-        <div className="divider"><span/>or continue with phone<span/></div>
-      </>
-    )}
     <button className="google-button" onClick={loginWithGoogle}><span className="google-mark" aria-hidden="true"/><span>Continue with Google</span></button>
     <div className="divider"><span/>or continue with phone<span/></div>
     <form onSubmit={submitPhone}><label className="field-label" htmlFor="phone">PHONE NUMBER</label><div className="phone-field"><div className={`country-select ${countryOpen ? 'country-open' : ''}`}><button className="country-trigger" type="button" aria-label="Country code" aria-expanded={countryOpen} onClick={() => setCountryOpen(open => !open)}><span>{countryCode}</span><ChevronDown size={14}/></button>{countryOpen && <div className="country-menu" role="listbox">{countryCodes.map(([country, codeValue]) => <button className={countryCode === codeValue ? 'country-option selected' : 'country-option'} type="button" role="option" aria-selected={countryCode === codeValue} key={`${country}-${codeValue}`} onClick={() => { setCountryCode(codeValue); setCountryOpen(false); }}><span>{country}</span>{countryCode === codeValue && <Check size={14}/>}</button>)}</div>}</div><input id="phone" type="tel" inputMode="tel" placeholder="(555) 000-0000" value={phone} onChange={e => setPhone(e.target.value)} required/></div>
-      <button className="auth-primary" type="submit">{screen === 'signup' ? 'Continue with phone' : 'Send sign-in code'} <ArrowUpRight size={18}/></button></form>
+      <button className="auth-primary" type="submit" disabled={authLoading}>{authLoading ? 'Sending code...' : screen === 'signup' ? 'Continue with phone' : 'Send sign-in code'} {!authLoading && <ArrowUpRight size={18}/>}</button></form>
     <p className="terms-copy">By continuing, you agree to our <button type="button" onClick={() => setLegalPage('terms')}>Terms of Use</button> and <button type="button" onClick={() => setLegalPage('privacy')}>Privacy Policy</button>.</p>
     <div className="switch-auth">{screen === 'signup' ? 'Already have an account?' : 'New to MyFamilyHealth?'} <button onClick={() => setScreen(screen === 'signup' ? 'signin' : 'signup')}>{screen === 'signup' ? 'Sign in' : 'Create an account'}</button></div>
     {authError && <p className="auth-error">{authError}</p>}
@@ -691,16 +760,47 @@ function AuthScreen({ biometricCredentials = [], currentUser = null }) {
 
 function AuthBrand({ compact = false }) { return <div className={`auth-brand ${compact ? 'compact' : ''}`}><div className="brand"><span className="brand-mark"><HeartPulse size={17}/></span><span>MyFamilyHealth</span></div>{!compact && <span>MyFamilyHealth v1.0</span>}</div> }
 
-function NotificationPanel() {
+function NotificationPanel({ notifications, onMarkAsRead, showRead, setShowRead, unreadPage, setUnreadPage, readPage, setReadPage }) {
+  const ITEMS_PER_PAGE = 3;
+  const unreadNotifications = notifications.filter(notif => notif.unread);
+  const readNotifications = notifications.filter(notif => !notif.unread);
+  
+  const unreadTotalPages = Math.ceil(unreadNotifications.length / ITEMS_PER_PAGE);
+  const readTotalPages = Math.ceil(readNotifications.length / ITEMS_PER_PAGE);
+  
+  const currentPage = showRead ? readPage : unreadPage;
+  const totalPages = showRead ? readTotalPages : unreadTotalPages;
+  const allNotifications = showRead ? readNotifications : unreadNotifications;
+  
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const endIndex = startIndex + ITEMS_PER_PAGE;
+  const displayedNotifications = allNotifications.slice(startIndex, endIndex);
+  
+  const unreadCount = unreadNotifications.length;
+  const readCount = readNotifications.length;
+  
+  const handlePageChange = (newPage) => {
+    if (showRead) {
+      setReadPage(Math.max(1, Math.min(newPage, readTotalPages)));
+    } else {
+      setUnreadPage(Math.max(1, Math.min(newPage, unreadTotalPages)));
+    }
+  };
+  
   return <section className="notification-panel" aria-label="Notifications">
-    <div className="notification-heading"><div><p className="eyebrow">YOUR UPDATES</p><h2>Notifications</h2></div><span>{notifications.filter(notification => notification.unread).length} unread</span></div>
-    <div className="notification-list">{notifications.map(notification => <article className={`notification-item ${notification.unread ? 'notification-unread' : ''}`} key={notification.id}><span className="notification-icon"><Bell size={15}/></span><div><h3>{escapeText(notification.title)}</h3><p>{escapeText(notification.detail)}</p><small>{notification.time}</small></div>{notification.unread && <i aria-label="Unread"/>}</article>)}</div>
+    <div className="notification-heading"><div><p className="eyebrow">YOUR UPDATES</p><h2>Notifications</h2></div><span>{showRead ? `${readCount} read` : `${unreadCount} unread`}</span></div>
+    <div className="notification-tabs" style={{ display: 'flex', gap: '8px', marginBottom: '12px', paddingBottom: '10px', borderBottom: '1px solid #edf2ee' }}>
+      <button onClick={() => { setShowRead(false); setUnreadPage(1); }} style={{ flex: 1, padding: '8px', borderRadius: '8px', border: 'none', background: !showRead ? '#287368' : '#f0f4f1', color: !showRead ? '#fff' : '#287368', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}>Unread ({unreadCount})</button>
+      <button onClick={() => { setShowRead(true); setReadPage(1); }} style={{ flex: 1, padding: '8px', borderRadius: '8px', border: 'none', background: showRead ? '#287368' : '#f0f4f1', color: showRead ? '#fff' : '#287368', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}>Read ({readCount})</button>
+    </div>
+    <div className="notification-list">{displayedNotifications.length > 0 ? displayedNotifications.map(notification => <article className={`notification-item ${!showRead ? 'notification-unread' : 'notification-read'}`} key={notification.id} role="button" onClick={() => !showRead && onMarkAsRead(notification.id)} style={{ cursor: !showRead ? 'pointer' : 'default' }}><span className="notification-icon"><Bell size={15}/></span><div><h3>{notification.title}</h3><p>{notification.detail}</p><small>{notification.time}</small></div>{!showRead && <i aria-label="Unread"/>}</article>) : <div style={{ padding: '20px', textAlign: 'center', color: '#999' }}>{showRead ? 'No read notifications' : 'No unread notifications'}</div>}</div>
+    {totalPages > 1 && <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '12px', marginTop: '12px', paddingTop: '10px', borderTop: '1px solid #edf2ee' }}><button onClick={() => handlePageChange(currentPage - 1)} disabled={currentPage === 1} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #dce5de', background: currentPage === 1 ? '#f5f7f3' : '#fff', color: currentPage === 1 ? '#a0aaa5' : '#287368', fontSize: '10px', fontWeight: '600', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', opacity: currentPage === 1 ? 0.6 : 1 }}>← Prev</button><span style={{ fontSize: '10px', color: '#82918b', fontWeight: '600' }}>{currentPage} of {totalPages}</span><button onClick={() => handlePageChange(currentPage + 1)} disabled={currentPage === totalPages} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #dce5de', background: currentPage === totalPages ? '#f5f7f3' : '#fff', color: currentPage === totalPages ? '#a0aaa5' : '#287368', fontSize: '10px', fontWeight: '600', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', opacity: currentPage === totalPages ? 0.6 : 1 }}>Next →</button></div>}
   </section>;
 }
 
 function SearchPanel({ searchTerm, setSearchTerm, submitSearch, chooseExample }) {
   return <section className="search-panel" aria-label="Search health records">
-    <form className="search-panel-input" onSubmit={event => { event.preventDefault(); submitSearch(); }}><Search size={17}/><input autoFocus value={searchTerm} onChange={event => setSearchTerm(sanitizeInput(event.target.value))} placeholder="Search health records" /></form>
+    <form className="search-panel-input" onSubmit={event => { event.preventDefault(); submitSearch(); }}><Search size={17}/><input autoFocus value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder="Search health records" /></form>
     <p className="search-examples-label">TRY A FILTER</p>
     <div className="search-examples">{searchExamples.map(example => <button type="button" key={example} onClick={() => chooseExample(example)}>{example}</button>)}</div>
   </section>;
@@ -728,65 +828,343 @@ function LegalDialog({ page, close }) {
   </div>;
 }
 
-function HomeScreen({ activePerson, setActivePerson, items, onAdd, onViewTimeline, showNotifications, toggleNotifications }) {
-  const personCycle = ['My profile', 'Family Member 1', 'Family Member 2'];
-  const currentIndex = personCycle.indexOf(activePerson);
-  const nextPerson = personCycle[(currentIndex + 1) % personCycle.length];
-  const firstName = activePerson.split(' ')[0];
-  const initials = activePerson.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase();
-  const followUp = {
-    'My profile': ['No follow-up scheduled', 'Add a care plan when needed'],
-    'Family Member 1': ['No follow-up scheduled', 'Add a care plan when needed'],
-    'Family Member 2': ['No follow-up scheduled', 'Add a care plan when needed'],
-  }[activePerson] || ['No follow-up scheduled', 'Add a care plan when needed'];
+function HomeScreen({ activePerson, setActivePerson, primaryMemberName, familyList, items, notifications, onMarkNotificationAsRead, onAdd, onViewTimeline, onOpenRecord, showNotifications, showReadNotifications, setShowReadNotifications, unreadNotificationPage, setUnreadNotificationPage, readNotificationPage, setReadNotificationPage, toggleNotifications }) {
+  const [personMenuOpen, setPersonMenuOpen] = useState(false);
+  // Always show primary account holder name in greeting, not the selected person
+  const primaryFirstName = (primaryMemberName || 'there').split(' ')[0];
+  // Login user (owner) initials - ALWAYS from primary member, never changes based on selection
+  const ownerInitials = primaryMemberName ? primaryMemberName.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase() : '?';
+  const activeMember = familyList.find(member => member.name === activePerson);
+  const isPrimaryHolderActive = !activeMember; // Primary holder is active if not in family list
+  const followUp = activeMember?.followUpTitle
+    ? [activeMember.followUpTitle, activeMember.followUpDetail || '']
+    : ['No follow-up scheduled', 'Add a care plan when needed'];
+  
+  // Filter items to show only records belonging to the active person
+  const filteredItems = items.filter(item => {
+    // If no recordBelongsTo field, default to primary account holder
+    const itemBelongsTo = item.recordBelongsTo || primaryMemberName;
+    return itemBelongsTo === activePerson;
+  }).sort((a, b) => timelineDate(b) - timelineDate(a)); // Sort by date descending (newest first)
+  
+  const today = new Date();
+  const dayName = today.toLocaleString('en-US', { weekday: 'long' }).toUpperCase();
+  const monthDate = today.toLocaleString('en-US', { month: 'long', day: 'numeric' }).toUpperCase();
+  const dateHeader = `${dayName}, ${monthDate}`;
 
   return <>
-    <div className="hello-row"><div><p className="eyebrow">TUESDAY, SEPTEMBER 9</p><h1>Good morning, {firstName}</h1></div><button className="bell" onClick={toggleNotifications} aria-label="Notifications" aria-expanded={showNotifications}><Bell size={19}/><i/><span className="notification-count">{notifications.filter(notification => notification.unread).length}</span></button></div>
-    {showNotifications && <NotificationPanel />}
-    <button className="person-picker" onClick={() => setActivePerson(nextPerson)}><span className="person-mini">{initials}</span><span><b>{activePerson}</b><small>Personal health space</small></span><ChevronDown size={18}/></button>
-
-    <section className="status-card">
-      <div className="status-detail"><div className="status-detail-icon medication"><ShieldCheck size={17}/></div><div><p>RUNNING MEDICATION</p><b>No running medication</b><span>Nothing active on this profile</span></div></div>
-      <div className="status-detail"><div className="status-detail-icon followup"><CalendarDays size={17}/></div><div><p>IMMEDIATE FOLLOW-UP</p><b>{followUp[0]}</b><span>{followUp[1]}</span></div></div>
-    </section>
-
-    <div className="section-heading"><div><p className="eyebrow">AT A GLANCE</p><h2>Your health snapshot</h2></div><button className="link-button" onClick={onViewTimeline}>See all</button></div>
-    <div className="snapshot-grid">
-      <div className="snapshot-card"><div className="metric-icon purple"><Activity size={19}/></div><span>Latest checkup</span><b>Blood work</b><small>Today</small></div>
-      <div className="snapshot-card"><div className="metric-icon coral"><CalendarDays size={19}/></div><span>Next reminder</span><b>Dental cleaning</b><small>Oct 14</small></div>
+    <div className="hello-row"><div><p className="eyebrow">{dateHeader}</p><h1>{getTimeGreeting()}, {primaryFirstName}</h1></div><button className="bell" onClick={toggleNotifications} aria-label="Notifications" aria-expanded={showNotifications}><Bell size={19}/><i/><span className="notification-count">{notifications?.filter(notification => notification.unread)?.length || 0}</span></button></div>
+    {showNotifications && <NotificationPanel notifications={notifications || []} onMarkAsRead={onMarkNotificationAsRead} showRead={showReadNotifications} setShowRead={setShowReadNotifications} unreadPage={unreadNotificationPage} setUnreadPage={setUnreadNotificationPage} readPage={readNotificationPage} setReadPage={setReadNotificationPage} />}
+    <div className={`person-select ${personMenuOpen ? 'person-open' : ''}`}>
+      <button className="person-picker" onClick={() => setPersonMenuOpen(open => !open)} aria-expanded={personMenuOpen} style={{ paddingLeft: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}><span style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-start' }}><b>{activePerson || 'No profile yet'}</b><small>{isPrimaryHolderActive ? 'Personal health space' : (familyList.find(m => m.name === activePerson)?.relationship || 'Family member')}</small></span><ChevronDown size={18} style={{ flexShrink: 0 }}/></button>
+      {personMenuOpen && <div className="person-menu" role="listbox">{primaryMemberName && <button className={activePerson === primaryMemberName ? 'person-option selected' : 'person-option'} type="button" role="option" aria-selected={activePerson === primaryMemberName} key={`primary-${primaryMemberName}`} onClick={() => { setActivePerson(primaryMemberName); setPersonMenuOpen(false); }}><span className="person-mini">{primaryMemberName.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase()}</span><span><b>{primaryMemberName}</b><small>Personal health space</small></span>{activePerson === primaryMemberName && <Check size={16}/>}</button>}{familyList.map(member => { const memberInitials = member.name.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase(); return <button className={activePerson === member.name ? 'person-option selected' : 'person-option'} type="button" role="option" aria-selected={activePerson === member.name} key={member.id || member.name} onClick={() => { setActivePerson(member.name); setPersonMenuOpen(false); }}><span className="person-mini">{memberInitials}</span><span><b>{member.name}</b><small>{member.relationship || 'Family member'}</small></span>{activePerson === member.name && <Check size={16}/>}</button>; })}</div>}
     </div>
 
-    <div className="section-heading recent"><div><p className="eyebrow">TIMELINE</p><h2>Recent records</h2></div><button className="link-button" onClick={onViewTimeline}>View history</button></div>
-    <div className="timeline">{items.slice(0,3).map((r, i) => <RecordRow record={r} key={i}/>)}</div>
+
+
+    <div className="section-heading recent"><div><p className="eyebrow">TIMELINE</p><h2>Recent records</h2></div>{filteredItems.length > 0 && <button className="link-button" onClick={onViewTimeline}>View history</button>}</div>
+    {filteredItems.length > 0 ? <div className="timeline">{filteredItems.slice(0,3).map((r, i) => <RecordRow record={r} key={i} onOpen={() => onOpenRecord(r)}/>)}</div> : <div className="empty-search">Start adding health records to see them here.</div>}
     <button className="add-record" onClick={onAdd}><Plus size={21}/><span>Add a health record</span></button>
     <p className="privacy-note"><LockKeyhole size={14}/>Your records are private and encrypted</p>
   </>;
 }
 
-function TimelinePage({ items, selectedRecord, onSelectRecord, onBack }) {
-  const [selectedMonth, setSelectedMonth] = useState('All');
-  const months = [...new Set(items.map(record => timelineDate(record).toLocaleString('en-US', { month: 'short' })))];
-  const visibleItems = items.filter(record => selectedMonth === 'All' || timelineDate(record).toLocaleString('en-US', { month: 'short' }) === selectedMonth).sort((a, b) => timelineDate(b) - timelineDate(a));
+function EditRecordPage({ record, onBack, onSave, primaryMemberName, familyList }) {
+  const [form, setForm] = useState({
+    title: record.title,
+    hospital: record.hospital,
+    doctor: record.doctor,
+    amount: record.amount,
+    notes: record.notes,
+    visitDate: record.date,
+    recordBelongsTo: record.recordBelongsTo || primaryMemberName || '',
+  });
+  const [attachments, setAttachments] = useState(record.attachments || []);
+  const [messageText, setMessageText] = useState('');
+  const attachmentInputRef = useRef(null);
+  const scanInputRef = useRef(null);
+  const uploadInputRef = useRef(null);
 
-  if (selectedRecord) return <RecordDetailPage record={selectedRecord} onBack={() => onSelectRecord(null)} />;
+  const familyOptions = [
+    { name: primaryMemberName, label: 'Personal health space' },
+    ...(familyList || []).map(member => ({ name: member.name, label: member.relationship || 'Family member' }))
+  ];
 
-  return <div className="timeline-page"><button className="settings-back" onClick={onBack}><ArrowLeft size={18}/>Back to home</button><div className="timeline-heading"><p className="eyebrow">YOUR HEALTH STORY</p><h1>Health timeline</h1><p>Move through your care history by month, then open any record for the full visit details.</p></div><div className="timeline-zoom" aria-label="Timeline month filter"><button className={selectedMonth === 'All' ? 'timeline-month active' : 'timeline-month'} onClick={() => setSelectedMonth('All')}>All</button>{months.map(month => <button className={selectedMonth === month ? 'timeline-month active' : 'timeline-month'} key={month} onClick={() => setSelectedMonth(month)}>{month}</button>)}</div><div className="visual-timeline">{visibleItems.length ? visibleItems.map((record, index) => { const date = timelineDate(record); const Icon = record.icon; return <button className="timeline-event" key={`${record.title}-${index}`} onClick={() => onSelectRecord(record)}><span className="timeline-line"/><span className="timeline-dot"/><span className="timeline-date"><b>{date.toLocaleString('en-US', { month: 'short' })}</b><small>{date.getDate()}</small></span><span className="timeline-event-card"><span className={`record-icon ${record.tone}`}><Icon size={17}/></span><span><b>{escapeText(record.title)}</b><small>{escapeText(String(record.source || ''))}</small></span><ChevronRight size={16}/></span></button>; }) : <div className="empty-search">No records in this month yet.</div>}</div></div>;
+  const setField = (field) => (event) => {
+    const value = event.target.value;
+    setForm((current) => ({ ...current, [field]: value }));
+  };
+
+  const addAttachment = async (file) => {
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const attachment = {
+        id: Math.random().toString(36).substr(2, 9),
+        filename: file.name,
+        type: file.type,
+        size: file.size,
+        uploadedAt: new Date().toISOString(),
+        data: e.target?.result,
+      };
+      setAttachments([...attachments, attachment]);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeAttachment = (attachmentId) => {
+    setAttachments(attachments.filter(att => att.id !== attachmentId));
+  };
+
+  const downloadAttachment = (attachment) => {
+    const link = document.createElement('a');
+    link.href = attachment.data;
+    link.download = attachment.filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const getFileTypeIcon = (type) => {
+    if (type.startsWith('image/')) return '🖼️';
+    if (type === 'application/pdf') return '📄';
+    return '📎';
+  };
+
+  const formatFileSize = (bytes) => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+  };
+
+  const importFromMessage = () => {
+    const parsed = parseIncomingMessage(messageText);
+    if (Object.keys(parsed).length === 0) return;
+
+    setForm((current) => ({
+      ...current,
+      ...parsed,
+      title: parsed.title || current.title,
+      hospital: parsed.hospital || current.hospital,
+      doctor: parsed.doctor || current.doctor,
+      amount: parsed.amount || current.amount,
+      visitDate: parsed.visitDate || current.visitDate,
+      notes: parsed.notes || current.notes,
+    }));
+    setMessageText('');
+  };
+
+  const handleFileUpload = async (event, type) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    await handleUploadedDocument(file, setForm);
+    event.target.value = '';
+  };
+
+  const openInput = (type) => {
+    (type === 'Scan' ? scanInputRef : uploadInputRef).current?.click();
+  };
+
+  const [showMissingFamilyError, setShowMissingFamilyError] = useState(false);
+
+  const submit = (event) => {
+    event.preventDefault();
+    if (!form.recordBelongsTo) {
+      setShowMissingFamilyError(true);
+      return;
+    }
+    onSave({ ...form, date: form.visitDate, attachments });
+  };
+
+  const handleAttachmentUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      await addAttachment(file);
+    }
+    event.target.value = '';
+  };
+
+  return <div className="add-family-page"><button className="settings-back" onClick={onBack}><ArrowLeft size={18}/>Cancel</button><div className="add-family-heading"><span className={`record-icon ${record.tone}`}><Settings size={25}/></span><p className="eyebrow">EDIT RECORD</p><h1>Update health record</h1><p>Make changes to this record and manage attachments.</p></div><form className="family-form edit-record-form" onSubmit={submit}>
+    <div className="form-section">
+      <label htmlFor="record-belongs-to">RECORD BELONGS TO</label>
+      <select id="record-belongs-to" value={form.recordBelongsTo} onChange={setField('recordBelongsTo')} className="family-select">
+        <option value="">Select family member...</option>
+        {familyOptions.map(option => (
+          <option key={option.name} value={option.name}>
+            {option.name} — {option.label}
+          </option>
+        ))}
+      </select>
+    </div>
+
+    <div className="form-section">
+      <label htmlFor="edit-record-title">RECORD TITLE</label>
+      <input id="edit-record-title" value={form.title} onChange={setField('title')} placeholder="e.g. Blood work" required/>
+      
+      <label htmlFor="edit-record-date">DATE OF VISIT</label>
+      <input id="edit-record-date" type="date" value={form.visitDate} onChange={setField('visitDate')} />
+      
+      <label htmlFor="edit-record-hospital">HOSPITAL / CLINIC</label>
+      <input id="edit-record-hospital" value={form.hospital} onChange={setField('hospital')} placeholder="e.g. Apollo Hospitals" />
+      
+      <label htmlFor="edit-record-doctor">DOCTOR / PROVIDER</label>
+      <input id="edit-record-doctor" value={form.doctor} onChange={setField('doctor')} placeholder="e.g. Dr. Smith" />
+      
+      <label htmlFor="edit-record-amount">AMOUNT PAID</label>
+      <input id="edit-record-amount" value={form.amount} onChange={setField('amount')} placeholder="e.g. $100" />
+      
+      <label htmlFor="edit-record-notes">NOTES</label>
+      <textarea id="edit-record-notes" value={form.notes} onChange={setField('notes')} placeholder="Additional details about your visit..."/>
+    </div>
+
+    <div className="form-section">
+      <label>AUTO-POPULATE FROM</label>
+      <div className="input-methods compact-methods">
+        <div className="input-method compact-method">
+          <label>📱 Load from SMS</label>
+          <textarea rows="2" value={messageText} onChange={(e) => setMessageText(e.target.value)} placeholder="Paste medical info from messages..." className="message-textarea" />
+          <button type="button" onClick={importFromMessage} className="method-button">Extract from SMS</button>
+        </div>
+        <div className="input-method compact-method">
+          <label>📷 Scan with Camera</label>
+          <button type="button" onClick={() => openInput('Scan')} className="method-button">Open Camera</button>
+        </div>
+        <div className="input-method compact-method">
+          <label>📄 Upload Document</label>
+          <button type="button" onClick={() => openInput('Upload')} className="method-button">Choose File</button>
+        </div>
+      </div>
+    </div>
+
+    {attachments.length > 0 && (
+      <div className="form-section">
+        <label>ATTACHMENTS ({attachments.length})</label>
+        <div className="attachments-list">
+          {attachments.map((att) => (
+            <div key={att.id} className="attachment-item">
+              <div className="attachment-info">
+                <span className="attachment-icon">{getFileTypeIcon(att.type)}</span>
+                <div className="attachment-details">
+                  <div className="attachment-name">{att.filename}</div>
+                  <div className="attachment-meta">{formatFileSize(att.size)} • {att.type}</div>
+                </div>
+              </div>
+              <div className="attachment-actions">
+                <button type="button" onClick={() => downloadAttachment(att)} className="attachment-action" title="Download"><ArrowUpRight size={16}/></button>
+                <button type="button" onClick={() => removeAttachment(att.id)} className="attachment-action delete" title="Delete"><X size={16}/></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
+
+    <div className="form-section">
+      <button type="button" onClick={() => attachmentInputRef.current?.click()} className="add-attachment-button">+ Add attachment</button>
+    </div>
+
+    <input ref={scanInputRef} className="hidden-file-input" type="file" accept="image/*" capture="environment" onChange={(event) => handleFileUpload(event, 'Scan')} />
+    <input ref={uploadInputRef} className="hidden-file-input" type="file" accept=".pdf,image/*" onChange={(event) => handleFileUpload(event, 'Upload')} />
+    <input ref={attachmentInputRef} className="hidden-file-input" type="file" onChange={handleAttachmentUpload} />
+
+    <button className="auth-primary" type="submit"><Check size={18}/>Save changes</button>
+  </form>{showMissingFamilyError && <div className="confirm-backdrop" role="presentation" onClick={() => setShowMissingFamilyError(false)}><section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="missing-family-title" onClick={event => event.stopPropagation()}><span className="confirm-icon"><Users size={20}/></span><h2 id="missing-family-title">Select a family member</h2><p>Please choose who this record belongs to before saving.</p><div className="confirm-actions"><button className="confirm-cancel" onClick={() => setShowMissingFamilyError(false)}>OK</button></div></section></div>}</div>;
 }
 
-function RecordDetailPage({ record, onBack }) {
+function TimelinePage({ items, selectedRecord, onSelectRecord, onEdit, onDelete, onBack, activePerson, primaryMemberName }) {
+  const [selectedMonth, setSelectedMonth] = useState('All');
+  
+  // Filter items to show only records belonging to the active person
+  const filteredByPerson = items.filter(record => {
+    // If no recordBelongsTo field, default to primary account holder
+    const itemBelongsTo = record.recordBelongsTo || primaryMemberName;
+    return itemBelongsTo === activePerson;
+  });
+  
+  const months = [...new Set(filteredByPerson.map(record => timelineDate(record).toLocaleString('en-US', { month: 'short' })))];
+  const visibleItems = filteredByPerson.filter(record => selectedMonth === 'All' || timelineDate(record).toLocaleString('en-US', { month: 'short' }) === selectedMonth).sort((a, b) => timelineDate(b) - timelineDate(a));
+  const displayName = activePerson === primaryMemberName ? 'Your' : `${activePerson}'s`;
+
+  if (selectedRecord) return <RecordDetailPage record={selectedRecord} onEdit={onEdit} onDelete={onDelete} onBack={() => onSelectRecord(null)} />;
+
+  return <div className="timeline-page"><button className="settings-back" onClick={onBack}><ArrowLeft size={18}/>Back to home</button><div className="timeline-heading"><p className="eyebrow">YOUR HEALTH STORY</p><h1>{displayName} Health timeline</h1><p>Move through your care history by month, then open any record for the full visit details.</p></div><div className="timeline-zoom" aria-label="Timeline month filter"><button className={selectedMonth === 'All' ? 'timeline-month active' : 'timeline-month'} onClick={() => setSelectedMonth('All')}>All</button>{months.map(month => <button className={selectedMonth === month ? 'timeline-month active' : 'timeline-month'} key={month} onClick={() => setSelectedMonth(month)}>{month}</button>)}</div><div className="visual-timeline">{visibleItems.length ? visibleItems.map((record, index) => { const date = timelineDate(record); const Icon = record.icon; return <button className="timeline-event" key={`${record.title}-${index}`} onClick={() => onSelectRecord(record)}><span className="timeline-line"/><span className="timeline-dot"/><span className="timeline-date"><b>{date.toLocaleString('en-US', { month: 'short' })}</b><small>{date.getDate()}</small></span><span className="timeline-event-card"><span className={`record-icon ${record.tone}`}><Icon size={17}/></span><span><b>{record.title}</b><small>{record.source}</small></span><ChevronRight size={16}/></span></button>; }) : <div className="empty-search">No records in this month yet.</div>}</div></div>;
+}
+
+function RecordDetailPage({ record, onBack, onEdit, onDelete }) {
   const date = timelineDate(record);
   const Icon = record.icon;
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  return <div className="record-detail-page"><button className="settings-back" onClick={onBack}><ArrowLeft size={18}/>Back to timeline</button><div className="record-detail-heading"><span className={`record-icon ${record.tone}`}><Icon size={22}/></span><p className="eyebrow">HEALTH RECORD</p><h1>{escapeText(record.title)}</h1><span>{date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span></div><div className="record-detail-card"><DetailField label="Hospital / clinic" value={record.hospital || record.source}/><DetailField label="Doctor / provider" value={record.doctor || 'Not provided'}/><DetailField label="Amount" value={record.amount || 'Not provided'}/><DetailField label="Notes" value={record.notes || 'No notes added'}/></div></div>;
+  const downloadAttachment = (attachment) => {
+    const link = document.createElement('a');
+    link.href = attachment.data;
+    link.download = attachment.filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const getFileTypeIcon = (type) => {
+    if (type.startsWith('image/')) return '🖼️';
+    if (type === 'application/pdf') return '📄';
+    return '📎';
+  };
+
+  const formatFileSize = (bytes) => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+  };
+
+  const attachments = record.attachments || [];
+
+  const handleDelete = () => {
+    setShowDeleteConfirm(false);
+    if (onDelete) onDelete(record.id);
+  };
+
+  return <div className="record-detail-page"><button className="settings-back" onClick={onBack}><ArrowLeft size={18}/>Back to timeline</button><div className="record-detail-heading"><span className={`record-icon ${record.tone}`}><Icon size={22}/></span><p className="eyebrow">HEALTH RECORD</p><h1>{record.title}</h1><span>{date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span></div><div className="record-detail-card"><DetailField label="Hospital / clinic" value={record.hospital || record.source}/><DetailField label="Doctor / provider" value={record.doctor || 'Not provided'}/><DetailField label="Amount" value={record.amount || 'Not provided'}/><DetailField label="Notes" value={record.notes || 'No notes added'}/></div>{attachments.length > 0 && (
+    <div className="record-detail-attachments">
+      <h3>Attachments ({attachments.length})</h3>
+      <div className="attachments-list detail-attachments">
+        {attachments.map((att) => (
+          <div key={att.id} className="attachment-item detail-attachment">
+            <div className="attachment-info">
+              <span className="attachment-icon">{getFileTypeIcon(att.type)}</span>
+              <div className="attachment-details">
+                <div className="attachment-name">{att.filename}</div>
+                <div className="attachment-meta">{formatFileSize(att.size)} • {att.type}</div>
+              </div>
+            </div>
+            <button type="button" onClick={() => downloadAttachment(att)} className="download-attachment-button" title="Download">
+              <ArrowUpRight size={16}/>Download
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  )}<div className="record-detail-actions">{onEdit && <button className="edit-record-button" onClick={onEdit}><Settings size={17}/>Edit record</button>}{onDelete && <button className="delete-record-button" onClick={() => setShowDeleteConfirm(true)}><X size={17}/>Delete record</button>}</div>{showDeleteConfirm && <div className="confirm-backdrop" role="presentation" onClick={() => setShowDeleteConfirm(false)}><section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-record-title" onClick={event => event.stopPropagation()}><span className="confirm-icon"><X size={20}/></span><h2 id="delete-record-title">Delete this record?</h2><p>This action is permanent and cannot be undone. All attachments and associated data will be permanently removed.</p><div className="confirm-actions"><button className="confirm-cancel" onClick={() => setShowDeleteConfirm(false)}>Cancel</button><button className="confirm-delete" onClick={handleDelete}>Delete record</button></div></section></div>}</div>;
 }
 
-function DetailField({ label, value }) { return <div className="detail-field"><p>{label}</p><b>{escapeText(String(value || ''))}</b></div>; }
+function DetailField({ label, value }) { return <div className="detail-field"><p>{label}</p><b>{value}</b></div>; }
 
-function RecordRow({ record, onOpen }) { const Icon = record.icon; return <button className="record-row" onClick={onOpen}><div className={`record-icon ${record.tone}`}><Icon size={19}/></div><div className="record-copy"><b>{escapeText(record.title)}</b><span>{escapeText(String(record.source || ''))}</span></div><div className="record-date">{record.date}<ChevronRight size={16}/></div></button> }
+function RecordRow({ record, onOpen }) { const Icon = record.icon; return <button className="record-row" onClick={onOpen}><div className={`record-icon ${record.tone}`}><Icon size={19}/></div><div className="record-copy"><b>{record.title}</b><span>{record.source}</span></div><div className="record-date">{formatRecordDate(record.date)}<ChevronRight size={16}/></div></button> }
 
-function RecordsScreen({ items, searchTerm, setSearchTerm, onAdd, onOpenRecord }) {
+function RecordsScreen({ items, searchTerm, setSearchTerm, onAdd, onOpenRecord, activePerson, primaryMemberName }) {
   const [recordFilter, setRecordFilter] = useState('all');
-  const allItems = items;
+  
+  // Filter items to show only records belonging to the active person
+  const personFilteredItems = items.filter(record => {
+    const itemBelongsTo = record.recordBelongsTo || primaryMemberName;
+    return itemBelongsTo === activePerson;
+  });
+  
+  const allItems = personFilteredItems.sort((a, b) => timelineDate(b) - timelineDate(a)); // Sort by date descending (newest first)
   const normalizedSearch = searchTerm.toLowerCase().trim();
   const filteredItems = allItems.filter(record => {
     const matchesType = recordFilter === 'all' || record.kind === recordFilter;
@@ -794,14 +1172,33 @@ function RecordsScreen({ items, searchTerm, setSearchTerm, onAdd, onOpenRecord }
     return matchesType && (!normalizedSearch || searchableText.includes(normalizedSearch));
   });
   const filters = [['all', 'All records'], ['report', 'Reports'], ['lab', 'Labs'], ['image', 'Images']];
+  const displayName = activePerson === primaryMemberName ? 'Your' : `${activePerson}'s`;
 
-  return <><div className="page-title"><p className="eyebrow">YOUR LIBRARY</p><h1>Health records</h1><span>{allItems.length} records organized in one secure place.</span></div><div className="search-box"><Search size={18}/><input aria-label="Search records" value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder="Search records, hospitals, doctors" />{searchTerm && <button className="clear-search" onClick={() => setSearchTerm('')} aria-label="Clear search"><X size={15}/></button>}</div>{searchTerm && <p className="search-result-label">Showing results for “{searchTerm}”</p>}<div className="filter-row">{filters.map(([value, label]) => <button key={value} className={recordFilter === value ? 'selected-filter' : ''} onClick={() => setRecordFilter(value)}>{label}</button>)}</div><div className="record-list">{filteredItems.length ? filteredItems.map((record, index) => <RecordRow record={record} key={index} onOpen={() => onOpenRecord(record)} />) : <div className="empty-search">No matching records yet.</div>}</div><button className="floating-add" onClick={onAdd}><Plus size={21}/>Add record</button></>;
+  return <><div className="page-title"><p className="eyebrow">YOUR LIBRARY</p><h1>{displayName} Health records</h1><span>{allItems.length} records organized in one secure place.</span></div><div className="search-box"><Search size={18}/><input aria-label="Search records" value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder="Search records, hospitals, doctors" />{searchTerm && <button className="clear-search" onClick={() => setSearchTerm('')} aria-label="Clear search"><X size={15}/></button>}</div>{searchTerm && <p className="search-result-label">Showing results for “{searchTerm}”</p>}<div className="filter-row">{filters.map(([value, label]) => <button key={value} className={recordFilter === value ? 'selected-filter' : ''} onClick={() => setRecordFilter(value)}>{label}</button>)}</div><div className="record-list">{filteredItems.length ? filteredItems.map((record, index) => <RecordRow record={record} key={index} onOpen={() => onOpenRecord(record)} />) : <div className="empty-search">No matching records yet.</div>}</div><button className="floating-add" onClick={onAdd}><Plus size={21}/>Add record</button></>;
 }
 
-function FamilyScreen({ activePerson, setActivePerson, familyList, onAddMember, onOpenMember }) {
+function FamilyScreen({ activePerson, setActivePerson, familyList, items, onAddMember, onOpenMember, primaryMemberName }) {
   const people = familyList.map(({ name, initial, tone, relationship }) => [initial, name, tone, relationship]);
+  const isPrimaryHolderActive = activePerson === primaryMemberName;
 
-  return <><div className="page-title family-title"><p className="eyebrow">SHARED CARE</p><h1>Family health</h1><span>Care for the people you love.</span></div><div className="family-tip"><Sparkles size={18}/><span>Keep everyone's care history organized in one place.</span></div>{people.length ? <div className="people-list">{people.map(([initial,name,tone,relationship])=><button onClick={()=>{ setActivePerson(name); onOpenMember(familyList.find(member => member.name === name)); }} className={`person-row ${activePerson===name?'person-selected':''}`} key={name}><span className={`family-avatar ${tone}`}>{initial}</span><span><b>{name}</b><small>{relationship || `${name}'s health records`}</small></span><ChevronRight size={18}/></button>)}</div> : <div className="empty-search">No family members added yet.</div>}<button className="invite-button" onClick={onAddMember}><Plus size={19}/>Add family member</button><p className="family-footnote"><ShieldCheck size={14}/>You control who can view and manage each profile.</p></> }
+  return <><div className="page-title family-title"><p className="eyebrow">SHARED CARE</p><h1>Family health</h1><span>Care for the people you love.</span></div><div className="family-tip"><Sparkles size={18}/><span>Keep everyone's care history organized in one place.</span></div>{people.length ? <div className="people-list">{people.map(([initial,name,tone,relationship])=><button onClick={()=>{ setActivePerson(name); onOpenMember(familyList.find(member => member.name === name)); }} className={`person-row ${activePerson===name?'person-selected':''}`} key={name}><span className={`family-avatar ${tone}`}>{initial}</span><span><b>{name}</b><small>{relationship || `${name}'s health records`}</small></span><ChevronRight size={18}/></button>)}</div> : <div className="empty-search">No family members added yet.</div>}<FamilyHealthGraph primaryMemberName={primaryMemberName} familyList={familyList} items={items} activePerson={activePerson} setActivePerson={setActivePerson}/><button className="invite-button" onClick={onAddMember}><Plus size={19}/>Add family member</button><p className="family-footnote"><ShieldCheck size={14}/>You control who can view and manage each profile.</p></> }
+
+function FamilyHealthGraph({ primaryMemberName, familyList, items, activePerson, setActivePerson }) {
+  const [zoom, setZoom] = useState(1);
+  const [selectedNode, setSelectedNode] = useState(null);
+  const members = [primaryMemberName && { name: primaryMemberName, relationship: 'You', initial: primaryMemberName.slice(0, 1) }, ...familyList].filter(Boolean);
+  const recordsFor = (name) => items.filter(record => (record.recordBelongsTo || primaryMemberName) === name).slice(-8).reverse();
+  const visibleRecords = (member) => recordsFor(member.name).slice(0, zoom === 1 ? 2 : zoom === 2 ? 4 : 8);
+  const selectNode = (member, record) => { setActivePerson(member.name); setSelectedNode({ member: member.name, record }); };
+
+  return <section className="family-graph" aria-label="Family health map">
+    <div className="family-graph-heading"><div><p className="eyebrow">FAMILY HEALTH MAP</p><h2>Care at a glance</h2></div><div className="graph-zoom" aria-label="Map detail level"><button onClick={() => setZoom(level => Math.max(1, level - 1))} disabled={zoom === 1} aria-label="Zoom out"><ZoomOut size={15}/></button><span>{zoom}×</span><button onClick={() => setZoom(level => Math.min(3, level + 1))} disabled={zoom === 3} aria-label="Zoom in"><ZoomIn size={15}/></button></div></div>
+    <p className="family-graph-intro">Zoom in to reveal more events for each person. Node color shows record type, not severity.</p>
+    <div className={`family-graph-lanes graph-detail-${zoom}`}>{members.map(member => { const memberRecords = visibleRecords(member); return <div className={`graph-lane ${activePerson === member.name ? 'graph-lane-active' : ''}`} key={member.name}><button className="graph-person" onClick={() => setActivePerson(member.name)}><span>{member.initial || member.name.slice(0, 1)}</span><b>{member.name === primaryMemberName ? 'You' : member.name.split(' ')[0]}</b></button><div className="graph-track"><i/>{memberRecords.length ? memberRecords.map((record, index) => { const type = healthNodeTypes[getHealthNodeType(record)]; const Icon = type.icon; return <button className={`health-node ${type.className} ${selectedNode?.record === record ? 'health-node-selected' : ''}`} title={`${type.label}: ${record.title}`} aria-label={`${member.name}: ${type.label}, ${record.title}`} key={record.id || `${record.title}-${index}`} onClick={() => selectNode(member, record)}><Icon size={15}/><span>{zoom >= 2 ? type.label : ''}</span></button>; }) : <span className="empty-graph-node">No records yet</span>}</div></div>; })}</div>
+    <div className="graph-legend">{Object.entries(healthNodeTypes).map(([key, type]) => { const Icon = type.icon; return <span key={key}><i className={type.className}><Icon size={12}/></i>{type.label}</span>; })}</div>
+    {selectedNode && <p className="graph-selected-note"><b>{selectedNode.member}</b> · {healthNodeTypes[getHealthNodeType(selectedNode.record)].label}: {selectedNode.record.title}</p>}
+  </section>;
+}
 
 function AddFamilyMemberPage({ onBack, onSave }) {
   const [name, setName] = useState('');
@@ -834,7 +1231,7 @@ function ProfileScreen({ activePerson, profileDetails, onLogout, openSettings, o
   const displayName = profileDetails.fullName || activePerson;
   const initials = displayName.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase();
 
-  return <><div className="profile-hero"><span className="large-avatar">{initials}</span><h1>{displayName}</h1><span>Personal health space</span><button onClick={openEditProfile}>Edit profile</button></div><div className="settings-list">{[[ShieldCheck,'Privacy & security','privacy'],[ShieldCheck,'Biometric & security','security'],[ShieldCheck,'Two-Factor Auth','mfa'],[Bell,'Notifications','notifications'],[Users,'Sharing & family access','sharing'],[FileText,'Export my records','export']].map(([Icon,label,page])=><button key={label} onClick={() => openSettings(page)}><span><Icon size={20}/>{label}</span><ChevronRight size={18}/></button>)}</div><button className="logout-button" onClick={onLogout}><LogOut size={16}/>Log out</button><p className="profile-version">MyFamilyHealth v1.0 · Your data stays yours</p></>;
+  return <><div className="profile-hero"><span className="large-avatar">{initials}</span><h1>{displayName}</h1><span>Personal health space</span><button onClick={openEditProfile}>Edit profile</button></div><div className="settings-list">{[[ShieldCheck,'Privacy & security','privacy'],[Bell,'Notifications','notifications'],[Users,'Sharing & family access','sharing'],[FileText,'Export my records','export']].map(([Icon,label,page])=><button key={label} onClick={() => openSettings(page)}><span><Icon size={20}/>{label}</span><ChevronRight size={18}/></button>)}</div><button className="logout-button" onClick={onLogout}><LogOut size={16}/>Log out</button><p className="profile-version">MyFamilyHealth v1.0 · Your data stays yours</p></>;
 }
 
 function EditProfilePage({ details, onBack, onSave }) {
@@ -844,53 +1241,13 @@ function EditProfilePage({ details, onBack, onSave }) {
   return <div className="edit-profile-page"><button className="settings-back" onClick={onBack}><ArrowLeft size={18}/>Back to profile</button><div className="edit-profile-heading"><span className="large-avatar">{form.fullName.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase() || '?'}</span><p className="eyebrow">PROFILE DETAILS</p><h1>Edit profile</h1><p>Keep your demographic and basic health information current.</p></div><form className="profile-form" onSubmit={event => { event.preventDefault(); onSave(form); }}><label htmlFor="profile-full-name">FULL NAME</label><input id="profile-full-name" value={form.fullName} onChange={update('fullName')} required/><div className="profile-form-grid"><div><label htmlFor="profile-dob">DATE OF BIRTH</label><input id="profile-dob" type="date" value={form.dateOfBirth} onChange={update('dateOfBirth')} /></div><div><label htmlFor="profile-gender">GENDER</label><select id="profile-gender" value={form.gender} onChange={update('gender')}><option value="">Select</option><option>Female</option><option>Male</option><option>Non-binary</option><option>Prefer not to say</option></select></div></div><div className="profile-form-grid"><div><label htmlFor="profile-blood">BLOOD GROUP</label><select id="profile-blood" value={form.bloodGroup} onChange={update('bloodGroup')}><option value="">Select</option><option>A+</option><option>A-</option><option>B+</option><option>B-</option><option>AB+</option><option>AB-</option><option>O+</option><option>O-</option></select></div><div><label htmlFor="profile-height">HEIGHT</label><input id="profile-height" value={form.height} onChange={update('height')} placeholder="e.g. 170 cm" /></div></div><label htmlFor="profile-weight">WEIGHT</label><input id="profile-weight" value={form.weight} onChange={update('weight')} placeholder="e.g. 68 kg"/><label htmlFor="profile-emergency">EMERGENCY CONTACT</label><input id="profile-emergency" value={form.emergencyContact} onChange={update('emergencyContact')} placeholder="Name and phone number"/><button className="auth-primary" type="submit"><Check size={18}/>Save profile</button></form></div>;
 }
 
-function SettingsPage({ page, activePerson, items, onBack, currentUser, biometricCredentials = [], mfaEnabled = false, mfaMethod = 'sms', mfaSettings = null, onShowMFASetup, onShowMFASettings }) {
+function SettingsPage({ page, activePerson, familyList, items, onBack }) {
   const [privateRecords, setPrivateRecords] = useState(true);
   const [updatesEnabled, setUpdatesEnabled] = useState(true);
   const [remindersEnabled, setRemindersEnabled] = useState(true);
 
-  const handleAddBiometricCredential = async (data) => {
-    if (!currentUser) return;
-    try {
-      // Save to Firestore
-      const userRef = doc(db, 'users', currentUser.uid);
-      const userDoc = await getDoc(userRef);
-      const credentials = userDoc.data()?.biometricCredentials || [];
-      
-      await setDoc(userRef, {
-        biometricCredentials: [
-          ...credentials,
-          {
-            id: `cred_${Date.now()}`,
-            ...data.credential,
-            type: data.type,
-          },
-        ],
-      }, { merge: true });
-    } catch (error) {
-      console.error('Error saving biometric credential:', error);
-    }
-  };
-
-  const handleDeleteBiometricCredential = async (credentialId) => {
-    if (!currentUser) return;
-    try {
-      const userRef = doc(db, 'users', currentUser.uid);
-      const userDoc = await getDoc(userRef);
-      const credentials = userDoc.data()?.biometricCredentials || [];
-      
-      await setDoc(userRef, {
-        biometricCredentials: credentials.filter(cred => cred.id !== credentialId),
-      }, { merge: true });
-    } catch (error) {
-      console.error('Error deleting biometric credential:', error);
-    }
-  };
-
   const pageDetails = {
     privacy: { label: 'PRIVACY & SECURITY', title: 'Privacy & security', description: 'Your health information stays under your control.', icon: ShieldCheck },
-    security: { label: 'SECURITY', title: 'Biometric & authentication', description: 'Manage your biometric credentials and sign-in methods.', icon: ShieldCheck },
-    mfa: { label: 'SECURITY', title: 'Two-Factor Authentication', description: 'Protect your account with an extra layer of security.', icon: ShieldCheck },
     notifications: { label: 'YOUR PREFERENCES', title: 'Notifications', description: 'Choose which updates MyFamilyHealth can send you.', icon: Bell },
     sharing: { label: 'FAMILY ACCESS', title: 'Sharing & family access', description: 'Review how your family profiles are organized.', icon: Users },
     export: { label: 'YOUR DATA', title: 'Export my records', description: 'Download a copy of your health timeline.', icon: FileText },
@@ -898,8 +1255,8 @@ function SettingsPage({ page, activePerson, items, onBack, currentUser, biometri
   const Icon = pageDetails.icon;
 
   const exportRecords = () => {
-    const header = 'Title,Source,Date,Hospital,Doctor,Amount,Notes';
-    const rows = items.map(record => [record.title, record.source, record.date, record.hospital, record.doctor, record.amount, record.notes].map(value => `"${String(value || '').replaceAll('"', '""')}"`).join(','));
+    const header = 'Title,Health node type,Source,Date,Hospital,Doctor,Amount,Notes';
+    const rows = items.map(record => [record.title, healthNodeTypes[getHealthNodeType(record)].label, record.source, record.date, record.hospital, record.doctor, record.amount, record.notes].map(value => `"${String(value || '').replaceAll('"', '""')}"`).join(','));
     const blob = new Blob([[header, ...rows].join('\n')], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -909,18 +1266,34 @@ function SettingsPage({ page, activePerson, items, onBack, currentUser, biometri
     URL.revokeObjectURL(url);
   };
 
-  return <div className="settings-page"><button className="settings-back" onClick={onBack}><ArrowLeft size={18}/>Back to profile</button><div className="settings-page-heading"><span className="settings-page-icon"><Icon size={21}/></span><p className="eyebrow">{pageDetails.label}</p><h1>{pageDetails.title}</h1><p>{pageDetails.description}</p></div>{page === 'privacy' && <div className="settings-card"><SettingToggle label="Keep records private" detail="Only you can view your health records." value={privateRecords} onChange={setPrivateRecords}/><SettingRow label="Data processing" detail="Document and image reading happens in your browser." /></div>}{page === 'security' && <div className="settings-card"><BiometricSettings userId={currentUser?.uid} userName={currentUser?.email} userDisplayName={currentUser?.displayName} credentials={biometricCredentials} onAddCredential={handleAddBiometricCredential} onDeleteCredential={handleDeleteBiometricCredential} /></div>}{page === 'mfa' && <div className="settings-card"><MFASettings userId={currentUser?.uid} mfaEnabled={mfaEnabled} mfaMethod={mfaMethod} onMethodChange={(method) => { setMFAMethod(method); }} onDisableMFA={() => { setMFAEnabled(false); }} onEnableMFA={onShowMFASetup} onClose={onBack} /></div>}{page === 'notifications' && <div className="settings-card"><SettingToggle label="Health updates" detail="New records, results, and care activity." value={updatesEnabled} onChange={setUpdatesEnabled}/><SettingToggle label="Appointment reminders" detail="Get reminders for upcoming care." value={remindersEnabled} onChange={setRemindersEnabled}/></div>}{page === 'sharing' && <div className="settings-card"><SettingRow label={activePerson} detail="Personal health space · Owner" /><SettingRow label="Family Member 1" detail="Family profile · Private by default" /><SettingRow label="Family Member 2" detail="Family profile · Private by default" /></div>}{page === 'export' && <div className="settings-card export-card"><SettingRow label="Health timeline" detail={`${items.length} records ready to export`} /><button className="export-action" onClick={exportRecords}><FileText size={17}/>Download CSV export</button><p className="settings-note"><ShieldCheck size={14}/>Your export is generated on this device.</p></div>}</div>;
+  return <div className="settings-page"><button className="settings-back" onClick={onBack}><ArrowLeft size={18}/>Back to profile</button><div className="settings-page-heading"><span className="settings-page-icon"><Icon size={21}/></span><p className="eyebrow">{pageDetails.label}</p><h1>{pageDetails.title}</h1><p>{pageDetails.description}</p></div>{page === 'privacy' && <div className="settings-card"><SettingToggle label="Keep records private" detail="Only you can view your health records." value={privateRecords} onChange={setPrivateRecords}/><SettingRow label="Data processing" detail="Document and image reading happens in your browser." /></div>}{page === 'notifications' && <div className="settings-card"><SettingToggle label="Health updates" detail="New records, results, and care activity." value={updatesEnabled} onChange={setUpdatesEnabled}/><SettingToggle label="Appointment reminders" detail="Get reminders for upcoming care." value={remindersEnabled} onChange={setRemindersEnabled}/></div>}{page === 'sharing' && <div className="settings-card"><SettingRow label={activePerson} detail="Personal health space · Owner" />{familyList.map(member => <SettingRow key={member.id || member.name} label={member.name} detail="Family profile · Private by default" />)}</div>}{page === 'export' && <div className="settings-card export-card"><SettingRow label="Health timeline" detail={`${items.length} records ready to export`} /><button className="export-action" onClick={exportRecords}><FileText size={17}/>Download CSV export</button><p className="settings-note"><ShieldCheck size={14}/>Your export is generated on this device.</p></div>}</div>;
 }
 
 function SettingToggle({ label, detail, value, onChange }) { return <div className="setting-row"><span><b>{label}</b><small>{detail}</small></span><button className={`setting-toggle ${value ? 'toggle-on' : ''}`} onClick={() => onChange(!value)} aria-pressed={value} aria-label={`${label}: ${value ? 'on' : 'off'}`}><i/></button></div>; }
 function SettingRow({ label, detail }) { return <div className="setting-row"><span><b>{label}</b><small>{detail}</small></span><Check size={17} className="setting-check"/></div>; }
 
-function AddSheet({ close, addRecord }) {
+function AddHealthRecordPage({ close, addRecord, primaryMemberName, familyList }) {
   const [recordType, setRecordType] = useState('Scan');
   const [form, setForm] = useState(createRecordForm('Scan'));
   const [messageText, setMessageText] = useState('');
+  const [attachments, setAttachments] = useState([]);
+  const [showMissingFamilyError, setShowMissingFamilyError] = useState(false);
+  const [selectedAutoPopulateOption, setSelectedAutoPopulateOption] = useState('sms');
   const scanInputRef = useRef(null);
   const uploadInputRef = useRef(null);
+  const attachmentInputRef = useRef(null);
+
+  const familyOptions = [
+    { name: primaryMemberName, label: 'Personal health space' },
+    ...familyList.map(member => ({ name: member.name, label: member.relationship || 'Family member' }))
+  ];
+
+  // Auto-select family member if there's only one
+  useEffect(() => {
+    if (familyOptions.length === 1 && !form.recordBelongsTo) {
+      setForm((current) => ({ ...current, recordBelongsTo: familyOptions[0].name }));
+    }
+  }, [familyList.length]);
 
   const typeMeta = {
     Scan: { label: 'Scan a document', hint: 'Open your camera and capture a document', tone: 'blue', icon: Camera },
@@ -928,11 +1301,7 @@ function AddSheet({ close, addRecord }) {
   };
 
   const setField = (field) => (event) => {
-    let value = event.target.value;
-    // Sanitize text input to prevent XSS attacks
-    if (field !== 'visitDate' && field !== 'amount' && typeof value === 'string') {
-      value = sanitizeInput(value);
-    }
+    const value = event.target.value;
     setForm((current) => ({ ...current, [field]: value }));
   };
 
@@ -955,12 +1324,80 @@ function AddSheet({ close, addRecord }) {
       visitDate: parsed.visitDate || current.visitDate,
       notes: parsed.notes || current.notes,
     }));
+    
+    // Add SMS content as text attachment
+    addTextAttachment(messageText, 'sms-message.txt');
     setMessageText('');
   };
 
+  const addTextAttachment = (text, filename = 'sms-message.txt') => {
+    if (!text || text.trim().length === 0) return;
+    
+    const attachment = {
+      id: Math.random().toString(36).substr(2, 9),
+      filename,
+      type: 'text/plain',
+      size: new Blob([text]).size,
+      uploadedAt: new Date().toISOString(),
+      data: `data:text/plain;base64,${btoa(text)}`,
+    };
+    setAttachments([...attachments, attachment]);
+  };
+
+  const addAttachment = async (file) => {
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const attachment = {
+        id: Math.random().toString(36).substr(2, 9),
+        filename: file.name,
+        type: file.type,
+        size: file.size,
+        uploadedAt: new Date().toISOString(),
+        data: e.target?.result,
+      };
+      setAttachments([...attachments, attachment]);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeAttachment = (attachmentId) => {
+    setAttachments(attachments.filter(att => att.id !== attachmentId));
+  };
+
+  const downloadAttachment = (attachment) => {
+    const link = document.createElement('a');
+    link.href = attachment.data;
+    link.download = attachment.filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const getFileTypeIcon = (type) => {
+    if (type.startsWith('image/')) return '🖼️';
+    if (type === 'application/pdf') return '📄';
+    return '📎';
+  };
+
+  const formatFileSize = (bytes) => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+  };
+
   const saveRecord = () => {
-    addRecord(recordType, form);
+    if (!form.recordBelongsTo) {
+      setShowMissingFamilyError(true);
+      return;
+    }
+    const recordWithAttachments = { ...form, attachments };
+    addRecord(recordType, recordWithAttachments);
     setForm(createRecordForm(recordType));
+    setAttachments([]);
   };
 
   const handleFileUpload = async (event, type) => {
@@ -969,6 +1406,18 @@ function AddSheet({ close, addRecord }) {
     setRecordType(type);
     setForm((current) => ({ ...current, type }));
     await handleUploadedDocument(file, setForm);
+    
+    // Add the uploaded/scanned document as an attachment
+    await addAttachment(file);
+    
+    event.target.value = '';
+  };
+
+  const handleAttachmentUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      await addAttachment(file);
+    }
     event.target.value = '';
   };
 
@@ -978,41 +1427,117 @@ function AddSheet({ close, addRecord }) {
     (type === 'Scan' ? scanInputRef : uploadInputRef).current?.click();
   };
 
-  return <div className="sheet-backdrop" onClick={close}><div className="add-sheet" onClick={e=>e.stopPropagation()}><div className="sheet-handle"/><div className="sheet-title"><div><p className="eyebrow">KEEP YOUR HISTORY CURRENT</p><h2>Add a record</h2></div><button onClick={close}><X size={20}/></button></div>
-    <div className="add-option-grid">{Object.keys(typeMeta).map((type) => {
-      const Icon = typeMeta[type].icon;
-      return <button key={type} type="button" className={`add-option ${recordType === type ? 'active' : ''}`} onClick={() => openInput(type)}>
-        <span className={`option-icon ${typeMeta[type].tone}`}><Icon size={21}/></span>
-        <span><b>{typeMeta[type].label}</b><small>{typeMeta[type].hint}</small></span>
-        <ChevronRight size={18}/>
-      </button>;
-    })}</div>
+  return <div className="sheet-backdrop" onClick={close}><div className="add-sheet add-health-record-sheet" onClick={e=>e.stopPropagation()}><div className="sheet-handle"/><div className="sheet-title"><div><p className="eyebrow">ADD A HEALTH RECORD</p><h2>Capture your medical information</h2></div><button onClick={close}><X size={20}/></button></div>
+    
+    <div className="record-form record-form-redesigned">
+      <div className="form-section">
+        <h3 className="form-section-title">Record belongs to</h3>
+        <div className="field-group">
+          <select value={form.recordBelongsTo} onChange={setField('recordBelongsTo')} className="family-select">
+            <option value="">Select family member...</option>
+            {familyOptions.map(option => (
+              <option key={option.name} value={option.name}>
+                {option.name} — {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="form-section">
+        <h3 className="form-section-title">Health node type</h3>
+        <div className="field-group">
+          <label htmlFor="health-node-type">Category shown in the family health map</label>
+          <select id="health-node-type" value={form.healthNodeType} onChange={setField('healthNodeType')} className="family-select">
+            {Object.entries(healthNodeTypes).map(([value, type]) => (
+              <option key={value} value={value}>{type.label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="form-section auto-populate-section-bg">
+        <div className="auto-populate-header-bar">
+          <h3 className="auto-populate-title">Auto-populate from</h3>
+        </div>
+        <div className="auto-populate-columns">
+          <button type="button" className={`auto-populate-column ${selectedAutoPopulateOption === 'sms' ? 'active' : ''}`} onClick={() => setSelectedAutoPopulateOption('sms')}>
+            <span className="column-label">Load from SMS</span>
+          </button>
+          <button type="button" className={`auto-populate-column ${selectedAutoPopulateOption === 'camera' ? 'active' : ''}`} onClick={() => setSelectedAutoPopulateOption('camera')}>
+            <span className="column-label">Scan with Camera</span>
+          </button>
+          <button type="button" className={`auto-populate-column ${selectedAutoPopulateOption === 'upload' ? 'active' : ''}`} onClick={() => setSelectedAutoPopulateOption('upload')}>
+            <span className="column-label">Upload Document</span>
+          </button>
+        </div>
+        <div className="auto-populate-content">
+          {selectedAutoPopulateOption === 'sms' && (
+            <div className="auto-populate-section">
+              <textarea rows="2" value={messageText} onChange={(e) => setMessageText(e.target.value)} placeholder="Paste medical info from messages..." className="message-textarea" />
+              <button type="button" onClick={importFromMessage} className="method-button">Extract from SMS</button>
+            </div>
+          )}
+          {selectedAutoPopulateOption === 'camera' && (
+            <div className="auto-populate-section">
+              <button type="button" onClick={() => openInput('Scan')} className="method-button">Open Camera</button>
+            </div>
+          )}
+          {selectedAutoPopulateOption === 'upload' && (
+            <div className="auto-populate-section">
+              <button type="button" onClick={() => openInput('Upload')} className="method-button">Choose File</button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="form-section">
+        <h3 className="form-section-title">Record details</h3>
+        <div className="field-group"><label htmlFor="record-title">Title</label><input id="record-title" value={form.title} onChange={setField('title')} placeholder="Annual checkup" /></div>
+        <div className="field-row">
+          <div className="field-group"><label htmlFor="visit-date">Visit date</label><input id="visit-date" type="date" value={form.visitDate} onChange={setField('visitDate')} /></div>
+          <div className="field-group"><label htmlFor="amount">Amount</label><input id="amount" type="number" min="0" step="0.01" value={form.amount} onChange={setField('amount')} placeholder="0.00" /></div>
+        </div>
+        <div className="field-group"><label htmlFor="hospital">Hospital / clinic</label><input id="hospital" value={form.hospital} onChange={setField('hospital')} placeholder="Memorial Hospital" /></div>
+        <div className="field-group"><label htmlFor="doctor">Doctor / provider</label><input id="doctor" value={form.doctor} onChange={setField('doctor')} placeholder="Dr. Maya Chen" /></div>
+        <div className="field-group"><label htmlFor="notes">Notes</label><textarea id="notes" rows="3" value={form.notes} onChange={setField('notes')} placeholder="Symptoms, treatment plan, or follow-up details" /></div>
+      </div>
+
+      {attachments.length > 0 && (
+        <div className="form-section">
+          <h3 className="form-section-title">Attachments ({attachments.length})</h3>
+          <div className="attachments-list">
+            {attachments.map((att) => (
+              <div key={att.id} className="attachment-item">
+                <div className="attachment-info">
+                  <span className="attachment-icon">{getFileTypeIcon(att.type)}</span>
+                  <div className="attachment-details">
+                    <div className="attachment-name">{att.filename}</div>
+                    <div className="attachment-meta">{formatFileSize(att.size)} • {att.type}</div>
+                  </div>
+                </div>
+                <div className="attachment-actions">
+                  <button type="button" onClick={() => downloadAttachment(att)} className="attachment-action" title="Download"><ArrowUpRight size={16}/></button>
+                  <button type="button" onClick={() => removeAttachment(att.id)} className="attachment-action delete" title="Delete"><X size={16}/></button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="form-section">
+        <h3 className="form-section-title">Additional attachments</h3>
+        <button type="button" onClick={() => attachmentInputRef.current?.click()} className="add-attachment-button">+ Add attachment</button>
+      </div>
+    </div>
+
     <input ref={scanInputRef} className="hidden-file-input" type="file" accept="image/*" capture="environment" onChange={(event) => handleFileUpload(event, 'Scan')} />
     <input ref={uploadInputRef} className="hidden-file-input" type="file" accept=".pdf,image/*" onChange={(event) => handleFileUpload(event, 'Upload')} />
-    <div className="message-import-box">
-      <div className="field-group"><label htmlFor="message-import">Read from messages</label><textarea id="message-import" rows="3" value={messageText} onChange={(e) => setMessageText(sanitizeInput(e.target.value))} placeholder="Example: 'Hospital: Mercy Heart Center. Doctor: Dr. A. Nair. Paid $260 on Sep 03.'" /></div>
-      <button className="message-import-button" type="button" onClick={importFromMessage}>Auto-fill from message</button>
-    </div>
-    <div className="file-import-box">
-      <label className="file-import-label" htmlFor="document-upload">Upload PDF or image to auto-fill</label>
-      <input id="document-upload" type="file" accept=".pdf,image/*" onChange={(event) => handleFileUpload(event, 'Upload')} />
-    </div>
-    <div className="record-form">
-      <div className="field-group"><label htmlFor="record-title">Title</label><input id="record-title" value={form.title} onChange={setField('title')} placeholder="Annual checkup" /></div>
-      <div className="field-row">
-        <div className="field-group"><label htmlFor="visit-date">Visit date</label><input id="visit-date" type="date" value={form.visitDate} onChange={setField('visitDate')} /></div>
-        <div className="field-group"><label htmlFor="amount">Amount</label><input id="amount" type="number" min="0" step="0.01" value={form.amount} onChange={setField('amount')} placeholder="0.00" /></div>
-      </div>
-      <div className="field-group"><label htmlFor="hospital">Hospital / clinic</label><input id="hospital" value={form.hospital} onChange={setField('hospital')} placeholder="Memorial Hospital" /></div>
-      <div className="field-group"><label htmlFor="doctor">Doctor / provider</label><input id="doctor" value={form.doctor} onChange={setField('doctor')} placeholder="Dr. Maya Chen" /></div>
-      <div className="field-group"><label htmlFor="notes">Notes</label><textarea id="notes" rows="3" value={form.notes} onChange={setField('notes')} placeholder="Symptoms, treatment plan, or follow-up details" /></div>
-    </div>
-    <div className="sheet-actions"><button className="sheet-secondary" type="button" onClick={close}>Cancel</button><button className="auth-primary" type="button" onClick={saveRecord}>Save record <Check size={18}/></button></div>
-    <p className="sheet-security"><LockKeyhole size={14}/>Encrypted and private by design</p></div></div>
-  };
+    <input ref={attachmentInputRef} className="hidden-file-input" type="file" onChange={handleAttachmentUpload} />
 
-createRoot(document.getElementById('root')).render(
-  <ErrorBoundary>
-    <App />
-  </ErrorBoundary>
-);
+    <div className="sheet-actions"><button className="sheet-secondary" type="button" onClick={close}>Cancel</button><button className="auth-primary" type="button" onClick={saveRecord}>Save record <Check size={18}/></button></div>
+    <p className="sheet-security"><LockKeyhole size={14}/>Encrypted and private by design</p>{showMissingFamilyError && <div className="confirm-backdrop" role="presentation" onClick={() => setShowMissingFamilyError(false)}><section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="missing-family-title" onClick={event => event.stopPropagation()}><span className="confirm-icon"><Users size={20}/></span><h2 id="missing-family-title">Select a family member</h2><p>Please choose who this record belongs to before saving.</p><div className="confirm-actions"><button className="confirm-cancel" onClick={() => setShowMissingFamilyError(false)}>OK</button></div></section></div>}</div></div>;
+}
+
+createRoot(document.getElementById('root')).render(<App />);
