@@ -125,9 +125,17 @@ const ManageProviderAccess = ({ userId = 'patient_123' }) => {
     try {
       await grantProviderAccess(
         userId,
-        providerData.providerId,
+        {
+          id: providerData.providerId,
+          name: providerData.providerName,
+          email: providerData.providerEmail,
+          specialty: providerData.providerSpecialty,
+          organization: providerData.providerOrganization,
+          npi: providerData.providerNPI
+        },
         providerData.permissionLevel,
-        providerData.customPermissions
+        providerData.customPermissions,
+        providerData.expirationDays
       );
       
       // Reload providers list
@@ -153,7 +161,8 @@ const ManageProviderAccess = ({ userId = 'patient_123' }) => {
   const handleConfirmRevoke = async () => {
     try {
       setRevokeLoading(true);
-      await revokeProviderAccess(userId, confirmRevoke.id);
+      // Use accessId instead of provider id for Firestore operations
+      await revokeProviderAccess(userId, confirmRevoke.accessId);
       
       // Reload providers list
       await loadProviders();
@@ -172,7 +181,7 @@ const ManageProviderAccess = ({ userId = 'patient_123' }) => {
    */
   const handleUpdateLevel = async (provider, newLevel) => {
     try {
-      await updateAccessLevel(userId, provider.id, newLevel);
+      await updateAccessLevel(userId, provider.accessId, newLevel);
       
       // Reload providers list
       await loadProviders();

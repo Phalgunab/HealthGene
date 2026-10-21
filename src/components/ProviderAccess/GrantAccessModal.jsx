@@ -23,12 +23,11 @@ const GrantAccessModal = ({ userId, onClose, onProviderSelected }) => {
   const [permissionLevel, setPermissionLevel] = useState('Full');
   const [customPermissions, setCustomPermissions] = useState([]);
 
+  // Expiration Date State
+  const [expirationDays, setExpirationDays] = useState(null);
+
   // Terms State
   const [agreeTerms, setAgreeTerms] = useState(false);
-
-  // Submission State
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState(null);
 
   /**
    * Handle search input change with debounce
@@ -123,8 +122,13 @@ const GrantAccessModal = ({ userId, onClose, onProviderSelected }) => {
       const providerData = {
         providerId: selectedProvider.id,
         providerName: selectedProvider.name,
+        providerEmail: selectedProvider.email,
+        providerSpecialty: selectedProvider.specialty,
+        providerOrganization: selectedProvider.organization,
+        providerNPI: selectedProvider.npi,
         permissionLevel,
-        customPermissions: permissionLevel === 'Custom' ? customPermissions : []
+        customPermissions: permissionLevel === 'Custom' ? customPermissions : [],
+        expirationDays
       };
 
       await onProviderSelected(providerData);
@@ -249,7 +253,63 @@ const GrantAccessModal = ({ userId, onClose, onProviderSelected }) => {
             </div>
           )}
 
-          {/* Step 3: Terms & Conditions */}
+          {/* Step 3: Set Expiration Date (Optional) */}
+          {selectedProvider && (
+            <div className="form-section">
+              <label className="form-label">
+                <span>Access Expiration (Optional)</span>
+              </label>
+              <p className="form-help">Set when access should automatically expire</p>
+              <div className="expiration-options">
+                <label className="radio-option">
+                  <input
+                    type="radio"
+                    name="expiration"
+                    value="none"
+                    checked={expirationDays === null}
+                    onChange={() => setExpirationDays(null)}
+                    disabled={submitting}
+                  />
+                  <span>No expiration</span>
+                </label>
+                <label className="radio-option">
+                  <input
+                    type="radio"
+                    name="expiration"
+                    value="30"
+                    checked={expirationDays === 30}
+                    onChange={() => setExpirationDays(30)}
+                    disabled={submitting}
+                  />
+                  <span>30 days</span>
+                </label>
+                <label className="radio-option">
+                  <input
+                    type="radio"
+                    name="expiration"
+                    value="60"
+                    checked={expirationDays === 60}
+                    onChange={() => setExpirationDays(60)}
+                    disabled={submitting}
+                  />
+                  <span>60 days</span>
+                </label>
+                <label className="radio-option">
+                  <input
+                    type="radio"
+                    name="expiration"
+                    value="90"
+                    checked={expirationDays === 90}
+                    onChange={() => setExpirationDays(90)}
+                    disabled={submitting}
+                  />
+                  <span>90 days</span>
+                </label>
+              </div>
+            </div>
+          )}
+
+          {/* Step 4: Terms & Conditions */}
           {selectedProvider && (
             <div className="form-section">
               <div className="terms-checkbox">

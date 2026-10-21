@@ -9,8 +9,8 @@
  * Firestore Integration: Uses users/{uid}/providerAccess and users/{uid}/accessAudit
  */
 
+import { db } from '../firebase';
 import { 
-  db, 
   collection, 
   query, 
   where, 
@@ -26,7 +26,7 @@ import {
   serverTimestamp,
   writeBatch,
   onSnapshot
-} from '../config/firebase';
+} from 'firebase/firestore';
 
 /**
  * Validate access permission data structure
@@ -543,10 +543,6 @@ const searchProvidersMock = async (query, limit = 10) => {
   ).slice(0, limit);
 };
 
-/**
- * Grant access to a new provider
- */
-export const grantProviderAccess = async (userId, providerId, permissionLevel, customPermissions = []) => {
 /**
  * Grant access to a new provider (wrapper for Firestore)
  */
