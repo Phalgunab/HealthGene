@@ -59,6 +59,18 @@ service cloud.firestore {
       match /backupCodes/{code=**} {
         allow read, write: if isAuthenticated() && isOwner(userId);
       }
+
+      // Provider Access Management (Phase 2)
+      match /providerAccess/{accessId} {
+        allow read, write: if isAuthenticated() && isOwner(userId);
+        allow delete: if isAuthenticated() && isOwner(userId);
+      }
+
+      // Access Audit Trail (Phase 2)
+      match /accessAudit/{auditId} {
+        allow read: if isAuthenticated() && isOwner(userId);
+        allow write: if isAuthenticated() && isOwner(userId);
+      }
     }
 
     // OTP Sessions (temporary, user-specific)
