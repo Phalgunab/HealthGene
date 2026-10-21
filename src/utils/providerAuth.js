@@ -391,6 +391,145 @@ export class ProviderRegistrationManager {
 }
 
 /**
+ * Validate signup form at each step
+ */
+export const validateSignupStep = (step, data) => {
+  const errors = {};
+
+  if (step === 1) {
+    // Email & Password validation
+    if (!data.email) errors.email = 'Email is required';
+    else if (!validateProviderEmail(data.email)) errors.email = 'Invalid email format';
+    
+    if (!data.password) errors.password = 'Password is required';
+    else {
+      const strength = validatePasswordStrength(data.password);
+      if (!strength.isValid) errors.password = 'Password must contain uppercase, lowercase, number, and special character';
+    }
+    
+    if (data.password !== data.confirmPassword) errors.confirmPassword = 'Passwords do not match';
+    if (!data.termsAccepted) errors.terms = 'You must accept the terms';
+  } else if (step === 2) {
+    // Professional information validation
+    if (!data.firstName) errors.firstName = 'First name is required';
+    if (!data.lastName) errors.lastName = 'Last name is required';
+    if (!data.specialty) errors.specialty = 'Specialty is required';
+    if (!data.organizationType) errors.organizationType = 'Organization type is required';
+    if (!data.organizationName) errors.organizationName = 'Organization name is required';
+    if (!data.licenseNumber) errors.licenseNumber = 'License number is required';
+    if (!data.licenseState) errors.licenseState = 'License state is required';
+  } else if (step === 3) {
+    // Organization details validation
+    if (!data.address) errors.address = 'Address is required';
+    if (!data.phone) errors.phone = 'Phone number is required';
+    if (!data.yearsExperience) errors.yearsExperience = 'Years of experience is required';
+    if (!data.npiNumber) errors.npiNumber = 'NPI number is required';
+    else if (!/^\d{10}$/.test(data.npiNumber)) errors.npiNumber = 'NPI must be 10 digits';
+  } else if (step === 4) {
+    // Security questions validation
+    if (!data.selectedQuestions || data.selectedQuestions.length !== 3) {
+      errors.questions = 'Select 3 security questions';
+    }
+    if (!data.answers || data.answers.some(a => !a)) {
+      errors.answers = 'Answer all security questions';
+    }
+  } else if (step === 5) {
+    // HIPAA consent validation
+    const consent = validateHIPAAConsent(data.hipaaConsents);
+    if (!consent.isValid) errors.hipaa = consent.message;
+  }
+
+  return { isValid: Object.keys(errors).length === 0, errors };
+};
+
+/**
+ * Validate entire signup form
+ */
+export const validateSignupForm = (formData) => {
+  const errors = {};
+  
+  // Validate step 1
+  const step1 = validateSignupStep(1, formData);
+  if (!step1.isValid) Object.assign(errors, step1.errors);
+  
+  // Validate step 2
+  const step2 = validateSignupStep(2, formData);
+  if (!step2.isValid) Object.assign(errors, step2.errors);
+  
+  // Validate step 3
+  const step3 = validateSignupStep(3, formData);
+  if (!step3.isValid) Object.assign(errors, step3.errors);
+  
+  // Validate step 4
+  const step4 = validateSignupStep(4, formData);
+  if (!step4.isValid) Object.assign(errors, step4.errors);
+  
+  // Validate step 5
+  const step5 = validateSignupStep(5, formData);
+  if (!step5.isValid) Object.assign(errors, step5.errors);
+
+  return { isValid: Object.keys(errors).length === 0, errors };
+};
+
+/**
+ * Create complete provider profile from signup form
+ */
+export const createSignupProfile = (formData) => {
+  return {
+    email: formData.email,
+    password: formData.password,
+    firstName: formData.firstName,
+    lastName: formData.lastName,
+    fullName: `${formData.firstName} ${formData.lastName}`,
+    licenseNumber: formData.licenseNumber,
+    licenseState: formData.licenseState,
+    specialty: formData.specialty,
+    organizationType: formData.organizationType,
+    organizationName: formData.organizationName,
+    address: formData.address,
+    phone: formData.phone,
+    yearsExperience: parseInt(formData.yearsExperience),
+    npiNumber: formData.npiNumber,
+    securityQuestions: formData.selectedQuestions.map((q, i) => ({
+      question: q,
+      answer: formData.answers[i],
+      index: i + 1
+    })),
+    hipaaConsent: formData.hipaaConsents,
+    mfaEnabled: formData.enableMFA,
+    createdAt: new Date().toISOString(),
+    status: 'pending_verification',
+    accessLevel: 'full',
+    isActive: false
+  };
+};
+
+/**
+ * Simulate provider signup API call
+ */
+export const submitProviderSignup = async (formData) => {
+  return new Promise((resolve, reject) => {
+    setTimeout(() => {
+      const validation = validateSignupForm(formData);
+      if (!validation.isValid) {
+        reject(new Error('Form validation failed'));
+        return;
+      }
+
+      const profile = createSignupProfile(formData);
+      
+      // Simulate API call success
+      resolve({
+        success: true,
+        provider: profile,
+        message: 'Provider account created. Please verify your email.',
+        verificationRequired: true
+      });
+    }, 1500);
+  });
+};
+
+/**
  * Default export
  */
 export default {
@@ -406,6 +545,10 @@ export default {
   validateProviderProfile,
   validateSecurityAnswers,
   validateHIPAAConsent,
+  validateSignupStep,
+  validateSignupForm,
+  createSignupProfile,
+  submitProviderSignup,
   createProviderProfile,
   generateProviderToken,
   logProviderAuthEvent,
