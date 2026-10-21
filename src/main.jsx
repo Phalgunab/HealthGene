@@ -7,13 +7,18 @@ import {
   FileText, HeartPulse, Home, Image, LockKeyhole, MoreHorizontal, Plus,
   Search, Settings, ShieldCheck, Sparkles, Upload, Users, X, ArrowLeft, Check, Smartphone, LogOut,
   FlaskConical, Thermometer, Stethoscope, Pill, Syringe, ScanLine, ZoomIn, ZoomOut, Scissors, BedDouble,
-  ShieldAlert
+  ShieldAlert, Lock
 } from 'lucide-react';
 import './styles.css';
 import { auth, db, googleProvider } from './firebase';
 import { onAuthStateChanged, RecaptchaVerifier, signInWithPhoneNumber, signInWithPopup, signOut } from 'firebase/auth';
 import { addDoc, collection, deleteDoc, doc, getDocs, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import ClinicalAlertsDashboard from './components/ClinicalAlertsDashboard';
+import ProviderAuthRouter from './components/ProviderAuth/ProviderAuthRouter';
+import ProviderDashboard from './components/ProviderDashboard';
+import ManageProviderAccess from './components/ProviderAccess/ManageProviderAccess';
+import AdminAuthRouter from './components/Admin/AdminAuthRouter';
+import AdminPanel from './components/Admin/AdminPanel';
 
 const countryCodes = [
   ['India (+91)', '+91'],
@@ -337,6 +342,10 @@ function App() {
   const [authenticated, setAuthenticated] = useState(false);
   const [authReady, setAuthReady] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
+  const [userType, setUserType] = useState(null); // 'patient', 'provider', or 'admin'
+  const [providerData, setProviderData] = useState(null);
+  const [adminUser, setAdminUser] = useState(null); // Admin user info
+  const [showAdminLogin, setShowAdminLogin] = useState(false); // Show admin login
   const [tab, setTab] = useState('Home');
   const [showAdd, setShowAdd] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
@@ -389,11 +398,40 @@ function App() {
     )
   };
 
-  useEffect(() => onAuthStateChanged(auth, (user) => {
-    setCurrentUser(user);
-    setAuthenticated(Boolean(user));
-    setAuthReady(true);
-  }), []);
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      setCurrentUser(user);
+      setAuthenticated(Boolean(user));
+      
+      if (user) {
+        // Determine user type: patient or provider
+        try {
+          // Check if provider
+          const providerDoc = await getDoc(doc(db, 'providers', user.uid));
+          if (providerDoc.exists()) {
+            setUserType('provider');
+            setProviderData(providerDoc.data());
+          } else {
+            // Check if patient (has profile)
+            const patientDoc = await getDoc(doc(db, 'users', user.uid, 'profile', 'details'));
+            if (patientDoc.exists()) {
+              setUserType('patient');
+            }
+          }
+        } catch (error) {
+          console.error('Error determining user type:', error);
+          setUserType('patient'); // Default to patient
+        }
+      } else {
+        setUserType(null);
+        setProviderData(null);
+      }
+      
+      setAuthReady(true);
+    });
+    
+    return unsubscribe;
+  }, []);
 
   const formatNotificationDate = (date) => {
     if (!date) return 'Unknown date';
@@ -655,8 +693,44 @@ function App() {
   };
 
   if (!authReady) return null;
+  
+  // Show admin login if requested
+  if (showAdminLogin && !adminUser) {
+    return (
+      <AdminAuthRouter 
+        onAdminLogin={(admin) => {
+          setAdminUser(admin);
+          setUserType('admin');
+          setShowAdminLogin(false);
+        }}
+        onNavigateBack={() => setShowAdminLogin(false)}
+      />
+    );
+  }
+  
+  // Admin dashboard
+  if (userType === 'admin' && adminUser) {
+    return (
+      <AdminPanel 
+        adminName={adminUser.name}
+        onLogout={() => {
+          setAdminUser(null);
+          setUserType(null);
+          setAuthenticated(false);
+          setShowAdminLogin(false);
+        }}
+      />
+    );
+  }
+  
   if (!authenticated) return <AuthScreen />;
-
+  
+  // Provider dashboard
+  if (userType === 'provider') {
+    return <ProviderDashboard providerData={providerData} currentUser={currentUser} />;
+  }
+  
+  // Patient dashboard
   return <main className="app-shell">
     <section className="mobile-app">
       <header className="topbar">
@@ -670,12 +744,13 @@ function App() {
         {tab === 'Home' && (showTimeline ? (editingRecord ? <EditRecordPage record={editingRecord} onBack={() => setEditingRecord(null)} onSave={(updates) => updateRecord(editingRecord.id, updates)} primaryMemberName={profileDetails.fullName} familyList={familyList} /> : <TimelinePage items={items} selectedRecord={timelineRecord} onSelectRecord={setTimelineRecord} onEdit={() => setEditingRecord(timelineRecord)} onDelete={deleteRecord} onBack={() => { setShowTimeline(false); setTimelineRecord(null); }} activePerson={activePerson} primaryMemberName={profileDetails.fullName} />) : recordDetail ? (editingRecord ? <EditRecordPage record={editingRecord} onBack={() => setEditingRecord(null)} onSave={(updates) => updateRecord(editingRecord.id, updates)} primaryMemberName={profileDetails.fullName} familyList={familyList} /> : <RecordDetailPage record={recordDetail} onEdit={() => setEditingRecord(recordDetail)} onDelete={deleteRecord} onBack={() => setRecordDetail(null)} />) : <HomeScreen activePerson={activePerson} setActivePerson={setActivePerson} primaryMemberName={profileDetails.fullName} familyList={familyList} items={items} notifications={notifications} onMarkNotificationAsRead={markNotificationAsRead} onAdd={() => setShowAdd(true)} onViewTimeline={() => setShowTimeline(true)} onOpenRecord={setRecordDetail} showNotifications={showNotifications} showReadNotifications={showReadNotifications} setShowReadNotifications={setShowReadNotifications} unreadNotificationPage={unreadNotificationPage} setUnreadNotificationPage={setUnreadNotificationPage} readNotificationPage={readNotificationPage} setReadNotificationPage={setReadNotificationPage} toggleNotifications={() => setShowNotifications(open => !open)} />)}
         {tab === 'Records' && (recordDetail ? (editingRecord ? <EditRecordPage record={editingRecord} onBack={() => setEditingRecord(null)} onSave={(updates) => updateRecord(editingRecord.id, updates)} primaryMemberName={profileDetails.fullName} familyList={familyList} /> : <RecordDetailPage record={recordDetail} onEdit={() => setEditingRecord(recordDetail)} onDelete={deleteRecord} onBack={() => setRecordDetail(null)} />) : <RecordsScreen items={items} searchTerm={searchTerm} setSearchTerm={setSearchTerm} onAdd={() => setShowAdd(true)} onOpenRecord={setRecordDetail} activePerson={activePerson} primaryMemberName={profileDetails.fullName} />)}
         {tab === 'Alerts' && <ClinicalAlertsDashboard userId={profileDetails.id} medications={dashboardData?.medications || []} labResults={dashboardData?.labResults || []} />}
+        {tab === 'Access' && <ManageProviderAccess userId={currentUser.uid} />}
         {tab === 'Family' && (showAddFamily ? <AddFamilyMemberPage onBack={() => setShowAddFamily(false)} onSave={addFamilyMember} /> : editingMember ? <EditFamilyMemberPage member={editingMember} onBack={() => setEditingMember(null)} onSave={(updatedMember) => updateFamilyMember(updatedMember, editingMember.name)} onDelete={() => deleteFamilyMember(editingMember)} /> : <FamilyScreen activePerson={activePerson} setActivePerson={setActivePerson} primaryMemberName={profileDetails.fullName} familyList={familyList} items={items} onAddMember={() => setShowAddFamily(true)} onOpenMember={setEditingMember} />)}
         {tab === 'Profile' && (editProfile ? <EditProfilePage details={profileDetails} onBack={() => setEditProfile(false)} onSave={saveProfile} /> : settingsPage ? <SettingsPage page={settingsPage} activePerson={activePerson} familyList={familyList} items={items} onBack={() => setSettingsPage(null)} /> : <ProfileScreen activePerson={activePerson} profileDetails={profileDetails} onLogout={() => signOut(auth)} openSettings={setSettingsPage} openEditProfile={() => setEditProfile(true)} />)}
       </div>
 
       <nav className="bottom-nav">
-        {[['Home', Home], ['Records', FileText], ['Alerts', ShieldAlert], ['Family', Users], ['Profile', Settings]].map(([label, Icon]) => <button key={label} onClick={() => { setSettingsPage(null); setEditProfile(false); setShowAddFamily(false); setEditingMember(null); setShowTimeline(false); setTimelineRecord(null); setRecordDetail(null); setEditingRecord(null); setTab(label); }} className={tab === label ? 'nav-active' : ''}><Icon size={20}/><span>{label}</span></button>)}
+        {[['Home', Home], ['Records', FileText], ['Alerts', ShieldAlert], ['Access', Lock], ['Family', Users], ['Profile', Settings]].map(([label, Icon]) => <button key={label} onClick={() => { setSettingsPage(null); setEditProfile(false); setShowAddFamily(false); setEditingMember(null); setShowTimeline(false); setTimelineRecord(null); setRecordDetail(null); setEditingRecord(null); setTab(label); }} className={tab === label ? 'nav-active' : ''}><Icon size={20}/><span>{label}</span></button>)}
       </nav>
 
       {showAdd && <AddHealthRecordPage close={() => setShowAdd(false)} addRecord={addRecord} primaryMemberName={profileDetails.fullName} familyList={familyList} />}
@@ -695,7 +770,8 @@ function AuthScreen() {
   const [confirmationResult, setConfirmationResult] = useState(null);
   const [authLoading, setAuthLoading] = useState(false);
   const recaptchaRef = useRef(null);
-  const title = screen === 'signup' ? 'Create your account' : 'Welcome back';
+  const title = screen === 'patient-signup' ? 'Create your account' : 'Welcome back';
+  
   const showAuthError = (error) => {
     const messages = {
       'auth/configuration-not-found': 'Firebase Authentication is not configured for this project. Enable Google and Phone sign-in in Firebase Console.',
@@ -707,6 +783,7 @@ function AuthScreen() {
     };
     setAuthError(messages[error?.code] || error?.message || 'Authentication failed. Please try again.');
   };
+  
   const loginWithGoogle = async () => {
     setAuthError('');
     try {
@@ -715,6 +792,7 @@ function AuthScreen() {
       showAuthError(error);
     }
   };
+  
   const submitPhone = async (event) => {
     event.preventDefault();
     setAuthError('');
@@ -734,6 +812,7 @@ function AuthScreen() {
       setAuthLoading(false);
     }
   };
+  
   const verifyCode = async (event) => {
     event.preventDefault();
     setAuthError('');
@@ -747,35 +826,164 @@ function AuthScreen() {
     }
   };
 
-  if (screen === 'welcome') return <main className="auth-shell"><section className="auth-card welcome-card">
-    <AuthBrand />
-    <div className="welcome-art"><span className="orbit orbit-one"/><span className="orbit orbit-two"/><div className="welcome-heart"><HeartPulse size={43}/></div><span className="art-pill pill-a"/><span className="art-pill pill-b"/><span className="art-plus">+</span></div>
-    <div className="welcome-copy"><p className="eyebrow">YOUR HEALTH, TOGETHER</p><h1>Every health moment,<br/>in one safe place.</h1><p>Bring your records, results, and family care into a story you can always understand.</p></div>
-    <button className="auth-primary" onClick={() => setScreen('signup')}>Get started <ArrowUpRight size={18}/></button>
-    <button className="auth-secondary" onClick={() => setScreen('signin')}>I already have an account</button>
-    <p className="auth-privacy"><LockKeyhole size={14}/>Private, encrypted, and always yours</p>
-  </section></main>;
+  // Welcome screen
+  if (screen === 'welcome') {
+    return <main className="auth-shell">
+      <section className="auth-card welcome-card">
+        <AuthBrand />
+        <div className="welcome-art">
+          <span className="orbit orbit-one"/>
+          <span className="orbit orbit-two"/>
+          <div className="welcome-heart">
+            <HeartPulse size={43}/>
+          </div>
+          <span className="art-pill pill-a"/>
+          <span className="art-pill pill-b"/>
+          <span className="art-plus">+</span>
+        </div>
+        <div className="welcome-copy">
+          <p className="eyebrow">YOUR HEALTH, TOGETHER</p>
+          <h1>Every health moment,<br/>in one safe place.</h1>
+          <p>Bring your records, results, and family care into a story you can always understand.</p>
+        </div>
+        <button className="auth-primary" onClick={() => setScreen('patient-signup')}>
+          Get started as Patient <ArrowUpRight size={18}/>
+        </button>
+        <button className="auth-secondary" onClick={() => setScreen('provider-auth')}>
+          Join as Healthcare Provider
+        </button>
+        <button className="auth-secondary" onClick={() => setScreen('signin')}>
+          I already have an account
+        </button>
+        <button className="auth-secondary" onClick={() => setShowAdminLogin(true)} style={{ borderColor: '#2d7a3a', color: '#2d7a3a' }}>
+          Admin Portal
+        </button>
+        <p className="auth-privacy">
+          <LockKeyhole size={14}/>Private, encrypted, and always yours
+        </p>
+      </section>
+    </main>;
+  }
 
-  if (screen === 'verify') return <main className="auth-shell"><section className="auth-card form-card verify-card">
-    <button className="back-button" onClick={() => setScreen('signup')}><ArrowLeft size={20}/></button><AuthBrand compact />
-    <div className="form-heading"><div className="verification-icon"><Smartphone size={25}/></div><h1>Check your messages</h1><p>We sent a 6-digit code to <b>{phone ? `${countryCode} ${phone}` : `${countryCode} (555) 000-0000`}</b>.</p></div>
-    <form onSubmit={verifyCode}><label className="field-label">VERIFICATION CODE</label><input aria-label="Verification code" className="code-input" inputMode="numeric" maxLength="6" placeholder="• • • • • •" value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ''))} autoFocus/>
-      <button className="auth-primary" type="submit" disabled={authLoading}>{authLoading ? 'Verifying code...' : 'Verify and continue'} {!authLoading && <Check size={18}/>}</button></form>
-    {authError && <p className="auth-error">{authError}</p>}
-    <button className="resend-button" onClick={() => setCode('')}>Didn't receive a code? <b>Resend</b></button><button className="change-number" onClick={() => setScreen('signup')}>Use a different number</button>
-  </section></main>;
+  // Provider auth flow
+  if (screen === 'provider-auth') {
+    return <ProviderAuthRouter onAuthSuccess={(result) => {
+      console.log('Provider auth successful:', result);
+    }} />;
+  }
 
-  return <main className="auth-shell"><section className="auth-card form-card">
-    <button className="back-button" onClick={() => setScreen('welcome')}><ArrowLeft size={20}/></button><AuthBrand compact />
-    <div className="form-heading"><p className="eyebrow">{screen === 'signup' ? 'WELCOME TO MYFAMILYHEALTH' : 'YOUR HEALTH SPACE'}</p><h1>{title}</h1><p>{screen === 'signup' ? 'Start building your secure health history.' : 'Sign in to see your health story.'}</p></div>
-    <button className="google-button" onClick={loginWithGoogle}><span className="google-mark" aria-hidden="true"/><span>Continue with Google</span></button>
-    <div className="divider"><span/>or continue with phone<span/></div>
-    <form onSubmit={submitPhone}><label className="field-label" htmlFor="phone">PHONE NUMBER</label><div className="phone-field"><div className={`country-select ${countryOpen ? 'country-open' : ''}`}><button className="country-trigger" type="button" aria-label="Country code" aria-expanded={countryOpen} onClick={() => setCountryOpen(open => !open)}><span>{countryCode}</span><ChevronDown size={14}/></button>{countryOpen && <div className="country-menu" role="listbox">{countryCodes.map(([country, codeValue]) => <button className={countryCode === codeValue ? 'country-option selected' : 'country-option'} type="button" role="option" aria-selected={countryCode === codeValue} key={`${country}-${codeValue}`} onClick={() => { setCountryCode(codeValue); setCountryOpen(false); }}><span>{country}</span>{countryCode === codeValue && <Check size={14}/>}</button>)}</div>}</div><input id="phone" type="tel" inputMode="tel" placeholder="(555) 000-0000" value={phone} onChange={e => setPhone(e.target.value)} required/></div>
-      <button className="auth-primary" type="submit" disabled={authLoading}>{authLoading ? 'Sending code...' : screen === 'signup' ? 'Continue with phone' : 'Send sign-in code'} {!authLoading && <ArrowUpRight size={18}/>}</button></form>
-    <p className="terms-copy">By continuing, you agree to our <button type="button" onClick={() => setLegalPage('terms')}>Terms of Use</button> and <button type="button" onClick={() => setLegalPage('privacy')}>Privacy Policy</button>.</p>
-    <div className="switch-auth">{screen === 'signup' ? 'Already have an account?' : 'New to MyFamilyHealth?'} <button onClick={() => setScreen(screen === 'signup' ? 'signin' : 'signup')}>{screen === 'signup' ? 'Sign in' : 'Create an account'}</button></div>
-    {authError && <p className="auth-error">{authError}</p>}
-  </section>{legalPage && <LegalDialog page={legalPage} close={() => setLegalPage(null)} />}<div id="recaptcha-container" /></main>;
+  // Verification code screen
+  if (screen === 'verify') {
+    return <main className="auth-shell">
+      <section className="auth-card form-card verify-card">
+        <button className="back-button" onClick={() => setScreen('patient-signup')}>
+          <ArrowLeft size={20}/>
+        </button>
+        <AuthBrand compact />
+        <div className="form-heading">
+          <div className="verification-icon">
+            <Smartphone size={25}/>
+          </div>
+          <h1>Check your messages</h1>
+          <p>We sent a 6-digit code to <b>{phone ? `${countryCode} ${phone}` : `${countryCode} (555) 000-0000`}</b>.</p>
+        </div>
+        <form onSubmit={verifyCode}>
+          <label className="field-label">VERIFICATION CODE</label>
+          <input 
+            aria-label="Verification code" 
+            className="code-input" 
+            inputMode="numeric" 
+            maxLength="6" 
+            placeholder="• • • • • •" 
+            value={code} 
+            onChange={e => setCode(e.target.value.replace(/\D/g, ''))} 
+            autoFocus
+          />
+          <button className="auth-primary" type="submit" disabled={authLoading}>
+            {authLoading ? 'Verifying code...' : 'Verify and continue'} {!authLoading && <Check size={18}/>}
+          </button>
+        </form>
+        {authError && <p className="auth-error">{authError}</p>}
+        <button className="resend-button" onClick={() => setCode('')}>
+          Didn't receive a code? <b>Resend</b>
+        </button>
+        <button className="change-number" onClick={() => setScreen('patient-signup')}>
+          Use a different number
+        </button>
+      </section>
+    </main>;
+  }
+
+  // Patient signup/signin screen
+  return <main className="auth-shell">
+    <section className="auth-card form-card">
+      <button className="back-button" onClick={() => setScreen('welcome')}>
+        <ArrowLeft size={20}/>
+      </button>
+      <AuthBrand compact />
+      <div className="form-heading">
+        <p className="eyebrow">{screen === 'patient-signup' ? 'WELCOME TO MYFAMILYHEALTH' : 'YOUR HEALTH SPACE'}</p>
+        <h1>{title}</h1>
+        <p>{screen === 'patient-signup' ? 'Start building your secure health history.' : 'Sign in to see your health story.'}</p>
+      </div>
+      <button className="google-button" onClick={loginWithGoogle}>
+        <span className="google-mark" aria-hidden="true"/>
+        <span>Continue with Google</span>
+      </button>
+      <div className="divider"><span/>or continue with phone<span/></div>
+      <form onSubmit={submitPhone}>
+        <label className="field-label" htmlFor="phone">PHONE NUMBER</label>
+        <div className="phone-field">
+          <div className={`country-select ${countryOpen ? 'country-open' : ''}`}>
+            <button 
+              className="country-trigger" 
+              type="button" 
+              aria-label="Country code" 
+              aria-expanded={countryOpen} 
+              onClick={() => setCountryOpen(open => !open)}
+            >
+              <span>{countryCode}</span>
+              <ChevronDown size={14}/>
+            </button>
+            {countryOpen && <div className="country-menu" role="listbox">
+              {countryCodes.map(([country, codeValue]) => <button 
+                className={countryCode === codeValue ? 'country-option selected' : 'country-option'} 
+                type="button" 
+                role="option" 
+                aria-selected={countryCode === codeValue} 
+                key={`${country}-${codeValue}`} 
+                onClick={() => { setCountryCode(codeValue); setCountryOpen(false); }}
+              >
+                <span>{country}</span>
+                {countryCode === codeValue && <Check size={14}/>}
+              </button>)}
+            </div>}
+          </div>
+          <input 
+            id="phone" 
+            type="tel" 
+            inputMode="tel" 
+            placeholder="(555) 000-0000" 
+            value={phone} 
+            onChange={e => setPhone(e.target.value)} 
+            required
+          />
+        </div>
+        <button className="auth-primary" type="submit" disabled={authLoading}>
+          {authLoading ? 'Sending code...' : screen === 'patient-signup' ? 'Continue with phone' : 'Send sign-in code'} {!authLoading && <ArrowUpRight size={18}/>}
+        </button>
+      </form>
+      <p className="terms-copy">By continuing, you agree to our <button type="button" onClick={() => setLegalPage('terms')}>Terms of Use</button> and <button type="button" onClick={() => setLegalPage('privacy')}>Privacy Policy</button>.</p>
+      <div className="switch-auth">
+        {screen === 'patient-signup' ? 'Already have an account?' : 'New to MyFamilyHealth?'} <button onClick={() => setScreen(screen === 'patient-signup' ? 'signin' : 'patient-signup')}>
+          {screen === 'patient-signup' ? 'Sign in' : 'Create an account'}
+        </button>
+      </div>
+      {authError && <p className="auth-error">{authError}</p>}
+    </section>
+    {legalPage && <LegalDialog page={legalPage} close={() => setLegalPage(null)} />}
+    <div id="recaptcha-container" />
+  </main>;
 }
 
 function AuthBrand({ compact = false }) { return <div className={`auth-brand ${compact ? 'compact' : ''}`}><div className="brand"><span className="brand-mark"><HeartPulse size={17}/></span><span>MyFamilyHealth</span></div>{!compact && <span>MyFamilyHealth v1.0</span>}</div> }

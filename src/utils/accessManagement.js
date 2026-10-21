@@ -5,7 +5,28 @@
  * - Permission level management
  * - Access history logging
  * - Provider search and validation
+ * 
+ * Firestore Integration: Uses users/{uid}/providerAccess and users/{uid}/accessAudit
  */
+
+import { db } from '../firebase';
+import { 
+  collection, 
+  query, 
+  where, 
+  getDocs, 
+  getDoc, 
+  doc, 
+  setDoc, 
+  updateDoc, 
+  deleteDoc,
+  orderBy,
+  limit,
+  Timestamp,
+  serverTimestamp,
+  writeBatch,
+  onSnapshot
+} from 'firebase/firestore';
 
 /**
  * Validate access permission data structure
@@ -41,95 +62,136 @@ export const validateAccessPermission = (permissionData) => {
 };
 
 /**
- * Get list of providers with current access
- * Mock implementation - connects to Firestore in production
+ * Get list of providers with current access from Firestore
+ * Real implementation - queries providerAccess collection
  */
-export const getProviderAccessList = async (userId) => {
+export const getProviderAccessListFromFirestore = async (userId) => {
   try {
-    // Mock delay to simulate network request
-    await new Promise(resolve => setTimeout(resolve, 800));
+    if (!userId) throw new Error('User ID is required');
 
-    // Mock data - in production, fetch from Firestore
-    const mockProviders = [
-      {
-        id: 'prov_001',
-        name: 'Dr. Sarah Johnson',
-        specialty: 'Cardiologist',
-        organization: 'Heart & Wellness Clinic',
-        permissionLevel: 'Full',
-        lastAccessed: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-        grantedDate: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString(),
-        npi: '1234567890',
-        avatar: 'SJ'
-      },
-      {
-        id: 'prov_002',
-        name: 'Dr. Michael Chen',
-        specialty: 'Endocrinologist',
-        organization: 'Diabetes Care Center',
-        permissionLevel: 'AdherenceOnly',
-        lastAccessed: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-        grantedDate: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString(),
-        npi: '0987654321',
-        avatar: 'MC'
-      },
-      {
-        id: 'prov_003',
-        name: 'Nurse Practitioner Lisa Brown',
-        specialty: 'Nurse Practitioner',
-        organization: 'Primary Care Plus',
-        permissionLevel: 'ReadOnly',
-        lastAccessed: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-        grantedDate: new Date(Date.now() - 120 * 24 * 60 * 60 * 1000).toISOString(),
-        npi: '1122334455',
-        avatar: 'LB'
-      }
-    ];
+    const accessRef = collection(db, 'users', userId, 'providerAccess');
+    const q = query(
+      accessRef,
+      where('status', '==', 'active'),
+      orderBy('grantedDate', 'desc')
+    );
 
-    return mockProviders;
+    const snapshot = await getDocs(q);
+    const providers = [];
+
+    for (const doc of snapshot.docs) {
+      const data = doc.data();
+      providers.push({
+        accessId: doc.id,
+        id: data.providerId,
+        name: data.providerName,
+        specialty: data.providerSpecialty,
+        organization: data.providerOrganization || 'Not specified',
+        email: data.providerEmail,
+        permissionLevel: data.permissionLevel,
+        lastAccessed: data.lastAccessDate ? new Date(data.lastAccessDate.seconds * 1000) : null,
+        grantedDate: new Date(data.grantedDate.seconds * 1000),
+        expirationDate: data.expirationDate ? new Date(data.expirationDate.seconds * 1000) : null,
+        npi: data.providerNPI || 'N/A',
+        avatar: data.providerName.split(' ').map(n => n[0]).join(''),
+        notes: data.notes || ''
+      });
+    }
+
+    return providers;
   } catch (error) {
-    console.error('Error fetching provider access list:', error);
+    console.error('Error fetching provider access list from Firestore:', error);
     throw error;
   }
 };
 
 /**
- * Grant access to a new provider
+ * Get single provider access record from Firestore
  */
-export const grantProviderAccess = async (userId, providerId, permissionLevel, customPermissions = []) => {
+export const getProviderAccessRecord = async (userId, accessId) => {
   try {
-    // Validate input
-    const validation = validateAccessPermission({
-      providerId,
-      permissionLevel,
-      customPermissions
-    });
+    const docRef = doc(db, 'users', userId, 'providerAccess', accessId);
+    const docSnapshot = await getDoc(docRef);
 
-    if (!validation.isValid) {
-      throw new Error(`Validation failed: ${JSON.stringify(validation.errors)}`);
+    if (!docSnapshot.exists()) {
+      throw new Error('Access record not found');
     }
 
-    // Mock delay to simulate network request
-    await new Promise(resolve => setTimeout(resolve, 1200));
+    return {
+      accessId: docSnapshot.id,
+      ...docSnapshot.data()
+    };
+  } catch (error) {
+    console.error('Error fetching provider access record:', error);
+    throw error;
+  }
+};
 
-    // Create access event
-    const accessEvent = {
-      id: `event_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      type: 'granted',
-      providerId,
+/**
+ * Grant provider access - writes to Firestore
+ */
+export const grantProviderAccessFirestore = async (userId, providerData, permissionLevel, customPermissions = [], expirationDays = null) => {
+  try {
+    if (!userId || !providerData.id) throw new Error('User ID and Provider ID are required');
+
+    const accessId = `access_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const grantedDate = Timestamp.now();
+    let expirationDate = null;
+
+    if (expirationDays) {
+      const expDate = new Date();
+      expDate.setDate(expDate.getDate() + expirationDays);
+      expirationDate = Timestamp.fromDate(expDate);
+    }
+
+    // Create access record
+    const accessRecord = {
+      patientId: userId,
+      providerId: providerData.id,
+      providerEmail: providerData.email,
+      providerName: providerData.name,
+      providerSpecialty: providerData.specialty,
+      providerOrganization: providerData.organization || '',
+      providerNPI: providerData.npi || '',
       permissionLevel,
-      customPermissions,
-      timestamp: new Date().toISOString(),
-      userId
+      customPermissions: permissionLevel === 'Custom' ? customPermissions : [],
+      grantedDate,
+      expirationDate,
+      lastAccessDate: null,
+      status: 'active',
+      notes: '',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
     };
 
-    // Mock logging
-    console.log('Access granted:', accessEvent);
+    // Create audit log entry
+    const auditId = `audit_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const auditEntry = {
+      patientId: userId,
+      providerId: providerData.id,
+      action: 'granted',
+      actionDate: grantedDate,
+      actionBy: 'patient',
+      permissionLevel,
+      reason: 'Patient granted access',
+      timestamp: serverTimestamp()
+    };
+
+    // Write both documents in transaction
+    const batch = writeBatch(db);
+
+    const accessDocRef = doc(db, 'users', userId, 'providerAccess', accessId);
+    const auditDocRef = doc(db, 'users', userId, 'accessAudit', auditId);
+
+    batch.set(accessDocRef, accessRecord);
+    batch.set(auditDocRef, auditEntry);
+
+    await batch.commit();
 
     return {
       success: true,
-      event: accessEvent,
-      message: 'Provider access granted successfully'
+      accessId,
+      message: `Access granted to ${providerData.name}`
     };
   } catch (error) {
     console.error('Error granting provider access:', error);
@@ -138,32 +200,50 @@ export const grantProviderAccess = async (userId, providerId, permissionLevel, c
 };
 
 /**
- * Revoke access from a provider
+ * Revoke provider access - updates Firestore
  */
-export const revokeProviderAccess = async (userId, providerId) => {
+export const revokeProviderAccessFirestore = async (userId, accessId, reason = '') => {
   try {
-    if (!providerId || typeof providerId !== 'string') {
-      throw new Error('Valid provider ID is required');
+    if (!userId || !accessId) throw new Error('User ID and Access ID are required');
+
+    const accessDocRef = doc(db, 'users', userId, 'providerAccess', accessId);
+    
+    // Get current access record for audit
+    const accessDoc = await getDoc(accessDocRef);
+    if (!accessDoc.exists()) {
+      throw new Error('Access record not found');
     }
 
-    // Mock delay to simulate network request
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    const accessData = accessDoc.data();
 
-    // Create access event
-    const accessEvent = {
-      id: `event_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      type: 'revoked',
-      providerId,
-      timestamp: new Date().toISOString(),
-      userId
+    // Create audit log entry
+    const auditId = `audit_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const auditEntry = {
+      patientId: userId,
+      providerId: accessData.providerId,
+      action: 'revoked',
+      actionDate: Timestamp.now(),
+      actionBy: 'patient',
+      permissionLevel: accessData.permissionLevel,
+      reason: reason || 'Patient revoked access',
+      timestamp: serverTimestamp()
     };
 
-    // Mock logging
-    console.log('Access revoked:', accessEvent);
+    // Write both updates in transaction
+    const batch = writeBatch(db);
+
+    batch.update(accessDocRef, {
+      status: 'revoked',
+      updatedAt: serverTimestamp()
+    });
+
+    const auditDocRef = doc(db, 'users', userId, 'accessAudit', auditId);
+    batch.set(auditDocRef, auditEntry);
+
+    await batch.commit();
 
     return {
       success: true,
-      event: accessEvent,
       message: 'Provider access revoked successfully'
     };
   } catch (error) {
@@ -173,41 +253,51 @@ export const revokeProviderAccess = async (userId, providerId) => {
 };
 
 /**
- * Update permission level for existing provider access
+ * Update permission level for existing access
  */
-export const updateAccessLevel = async (userId, providerId, newLevel, customPermissions = []) => {
+export const updateAccessLevelFirestore = async (userId, accessId, newLevel, customPermissions = [], reason = '') => {
   try {
-    // Validate input
-    const validation = validateAccessPermission({
-      providerId,
-      permissionLevel: newLevel,
-      customPermissions
-    });
+    if (!userId || !accessId) throw new Error('User ID and Access ID are required');
 
-    if (!validation.isValid) {
-      throw new Error(`Validation failed: ${JSON.stringify(validation.errors)}`);
+    const accessDocRef = doc(db, 'users', userId, 'providerAccess', accessId);
+    
+    // Get current access record
+    const accessDoc = await getDoc(accessDocRef);
+    if (!accessDoc.exists()) {
+      throw new Error('Access record not found');
     }
 
-    // Mock delay to simulate network request
-    await new Promise(resolve => setTimeout(resolve, 1100));
+    const accessData = accessDoc.data();
 
-    // Create access event
-    const accessEvent = {
-      id: `event_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      type: 'updated',
-      providerId,
-      newLevel,
-      customPermissions,
-      timestamp: new Date().toISOString(),
-      userId
+    // Create audit log entry
+    const auditId = `audit_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const auditEntry = {
+      patientId: userId,
+      providerId: accessData.providerId,
+      action: 'updated',
+      actionDate: Timestamp.now(),
+      actionBy: 'patient',
+      permissionLevel: newLevel,
+      reason: reason || `Permission level changed from ${accessData.permissionLevel} to ${newLevel}`,
+      timestamp: serverTimestamp()
     };
 
-    // Mock logging
-    console.log('Access level updated:', accessEvent);
+    // Write both updates
+    const batch = writeBatch(db);
+
+    batch.update(accessDocRef, {
+      permissionLevel: newLevel,
+      customPermissions: newLevel === 'Custom' ? customPermissions : [],
+      updatedAt: serverTimestamp()
+    });
+
+    const auditDocRef = doc(db, 'users', userId, 'accessAudit', auditId);
+    batch.set(auditDocRef, auditEntry);
+
+    await batch.commit();
 
     return {
       success: true,
-      event: accessEvent,
       message: 'Permission level updated successfully'
     };
   } catch (error) {
@@ -217,84 +307,53 @@ export const updateAccessLevel = async (userId, providerId, newLevel, customPerm
 };
 
 /**
- * Get access history with optional filters
+ * Get access history from Firestore
  */
-export const getAccessHistory = async (userId, filters = {}) => {
+export const getAccessHistoryFromFirestore = async (userId, filters = {}) => {
   try {
-    // Mock delay to simulate network request
-    await new Promise(resolve => setTimeout(resolve, 800));
+    if (!userId) throw new Error('User ID is required');
 
-    // Mock data
-    const mockHistory = [
-      {
-        id: 'event_1',
-        type: 'granted',
-        providerId: 'prov_001',
-        providerName: 'Dr. Sarah Johnson',
-        permissionLevel: 'Full',
-        timestamp: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString(),
-        description: 'Access granted to Dr. Sarah Johnson - Full access'
-      },
-      {
-        id: 'event_2',
-        type: 'granted',
-        providerId: 'prov_002',
-        providerName: 'Dr. Michael Chen',
-        permissionLevel: 'AdherenceOnly',
-        timestamp: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString(),
-        description: 'Access granted to Dr. Michael Chen - Adherence only'
-      },
-      {
-        id: 'event_3',
-        type: 'accessed',
-        providerId: 'prov_001',
-        providerName: 'Dr. Sarah Johnson',
-        permissionLevel: 'Full',
-        timestamp: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-        description: 'Dr. Sarah Johnson accessed patient data'
-      },
-      {
-        id: 'event_4',
-        type: 'granted',
-        providerId: 'prov_003',
-        providerName: 'Nurse Practitioner Lisa Brown',
-        permissionLevel: 'ReadOnly',
-        timestamp: new Date(Date.now() - 120 * 24 * 60 * 60 * 1000).toISOString(),
-        description: 'Access granted to Nurse Practitioner Lisa Brown - Read only'
-      },
-      {
-        id: 'event_5',
-        type: 'accessed',
-        providerId: 'prov_002',
-        providerName: 'Dr. Michael Chen',
-        permissionLevel: 'AdherenceOnly',
-        timestamp: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-        description: 'Dr. Michael Chen accessed patient data'
-      }
-    ];
+    const auditRef = collection(db, 'users', userId, 'accessAudit');
+    let q = query(auditRef, orderBy('actionDate', 'desc'), limit(100));
+
+    const snapshot = await getDocs(q);
+    let events = [];
+
+    for (const doc of snapshot.docs) {
+      const data = doc.data();
+      events.push({
+        id: doc.id,
+        type: data.action,
+        providerId: data.providerId,
+        providerName: data.providerName || 'Unknown',
+        permissionLevel: data.permissionLevel,
+        timestamp: new Date(data.actionDate.seconds * 1000),
+        description: formatAuditDescription(data.action, data.providerName, data.permissionLevel),
+        reason: data.reason,
+        actionBy: data.actionBy
+      });
+    }
 
     // Apply filters
-    let filtered = mockHistory;
-
     if (filters.eventType) {
-      filtered = filtered.filter(event => event.type === filters.eventType);
+      events = events.filter(e => e.type === filters.eventType);
     }
 
     if (filters.providerId) {
-      filtered = filtered.filter(event => event.providerId === filters.providerId);
+      events = events.filter(e => e.providerId === filters.providerId);
     }
 
     if (filters.startDate) {
       const startDate = new Date(filters.startDate);
-      filtered = filtered.filter(event => new Date(event.timestamp) >= startDate);
+      events = events.filter(e => e.timestamp >= startDate);
     }
 
     if (filters.endDate) {
       const endDate = new Date(filters.endDate);
-      filtered = filtered.filter(event => new Date(event.timestamp) <= endDate);
+      events = events.filter(e => e.timestamp <= endDate);
     }
 
-    return filtered.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    return events;
   } catch (error) {
     console.error('Error fetching access history:', error);
     throw error;
@@ -302,9 +361,223 @@ export const getAccessHistory = async (userId, filters = {}) => {
 };
 
 /**
- * Search for providers by name or NPI
+ * Helper to format audit description
  */
-export const searchProviders = async (query, limit = 10) => {
+const formatAuditDescription = (action, providerName, permissionLevel) => {
+  switch (action) {
+    case 'granted':
+      return `Access granted to ${providerName} - ${permissionLevel}`;
+    case 'revoked':
+      return `Access revoked from ${providerName}`;
+    case 'updated':
+      return `Permission updated for ${providerName} - ${permissionLevel}`;
+    case 'accessed':
+      return `${providerName} accessed your data`;
+    default:
+      return `Action: ${action}`;
+  }
+};
+
+/**
+ * Search for providers by email or name from providers collection
+ */
+export const searchProvidersFirestore = async (searchTerm, searchLimit = 10) => {
+  try {
+    if (!searchTerm || searchTerm.length < 2) {
+      return [];
+    }
+
+    // Query providers collection
+    const providersRef = collection(db, 'providers');
+    const q = query(
+      providersRef,
+      where('status', '==', 'verified'),
+      limit(searchLimit)
+    );
+
+    const snapshot = await getDocs(q);
+    const results = [];
+
+    for (const doc of snapshot.docs) {
+      const data = doc.data();
+      const searchLower = searchTerm.toLowerCase();
+      
+      // Filter results by search term
+      if (
+        data.fullName?.toLowerCase().includes(searchLower) ||
+        data.email?.toLowerCase().includes(searchLower) ||
+        data.specialization?.toLowerCase().includes(searchLower)
+      ) {
+        results.push({
+          id: doc.id,
+          name: data.fullName,
+          email: data.email,
+          specialty: data.specialization,
+          organization: data.hospitalName || 'Not specified',
+          npi: data.licenseNumber || 'N/A'
+        });
+      }
+    }
+
+    return results.slice(0, searchLimit);
+  } catch (error) {
+    console.error('Error searching providers:', error);
+    // Fallback to mock data if Firestore fails
+    return searchProvidersMock(searchTerm, searchLimit);
+  }
+};
+
+/**
+ * Listen to real-time changes in provider access
+ */
+export const onProviderAccessChange = (userId, callback) => {
+  try {
+    if (!userId) {
+      callback([]);
+      return () => {};
+    }
+
+    const accessRef = collection(db, 'users', userId, 'providerAccess');
+    const q = query(
+      accessRef,
+      where('status', '==', 'active'),
+      orderBy('grantedDate', 'desc')
+    );
+
+    return onSnapshot(q, (snapshot) => {
+      const providers = [];
+      
+      for (const doc of snapshot.docs) {
+        const data = doc.data();
+        providers.push({
+          accessId: doc.id,
+          id: data.providerId,
+          name: data.providerName,
+          specialty: data.providerSpecialty,
+          organization: data.providerOrganization || 'Not specified',
+          email: data.providerEmail,
+          permissionLevel: data.permissionLevel,
+          lastAccessed: data.lastAccessDate ? new Date(data.lastAccessDate.seconds * 1000) : null,
+          grantedDate: new Date(data.grantedDate.seconds * 1000),
+          expirationDate: data.expirationDate ? new Date(data.expirationDate.seconds * 1000) : null,
+          npi: data.providerNPI || 'N/A',
+          avatar: data.providerName.split(' ').map(n => n[0]).join(''),
+          notes: data.notes || ''
+        });
+      }
+
+      callback(providers);
+    }, (error) => {
+      console.error('Error listening to provider access:', error);
+      callback([]);
+    });
+  } catch (error) {
+    console.error('Error setting up real-time listener:', error);
+    return () => {};
+  }
+};
+
+/**
+ * Mock functions for fallback
+ */
+const searchProvidersMock = async (query, limit = 10) => {
+  // Mock delay to simulate network request
+  await new Promise(resolve => setTimeout(resolve, 600));
+
+  const allProviders = [
+    {
+      id: 'prov_101',
+      name: 'Dr. Sarah Johnson',
+      email: 'sarah.johnson@clinic.com',
+      specialty: 'Cardiologist',
+      organization: 'Heart & Wellness Clinic',
+      npi: '1234567890'
+    },
+    {
+      id: 'prov_102',
+      name: 'Dr. Michael Chen',
+      email: 'michael.chen@diabetes.com',
+      specialty: 'Endocrinologist',
+      organization: 'Diabetes Care Center',
+      npi: '0987654321'
+    },
+    {
+      id: 'prov_103',
+      name: 'Dr. James Wilson',
+      email: 'james.wilson@community.com',
+      specialty: 'Family Medicine',
+      organization: 'Community Health Center',
+      npi: '1111111111'
+    },
+    {
+      id: 'prov_104',
+      name: 'Dr. Maria Garcia',
+      email: 'maria.garcia@skin.com',
+      specialty: 'Dermatologist',
+      organization: 'Skin Care Specialists',
+      npi: '2222222222'
+    },
+    {
+      id: 'prov_105',
+      name: 'Nurse Practitioner Lisa Brown',
+      email: 'lisa.brown@primary.com',
+      specialty: 'Nurse Practitioner',
+      organization: 'Primary Care Plus',
+      npi: '1122334455'
+    },
+    {
+      id: 'prov_106',
+      name: 'Dr. Robert Taylor',
+      email: 'robert.taylor@respiratory.com',
+      specialty: 'Pulmonologist',
+      organization: 'Respiratory Health Group',
+      npi: '3333333333'
+    }
+  ];
+
+  const searchLower = query.toLowerCase();
+  return allProviders.filter(provider =>
+    provider.name.toLowerCase().includes(searchLower) ||
+    provider.email.toLowerCase().includes(searchLower) ||
+    provider.specialty.toLowerCase().includes(searchLower)
+  ).slice(0, limit);
+};
+
+/**
+ * Grant access to a new provider (wrapper for Firestore)
+ */
+export const grantProviderAccess = grantProviderAccessFirestore;
+
+/**
+ * Revoke access from a provider (wrapper for Firestore)
+ */
+export const revokeProviderAccess = revokeProviderAccessFirestore;
+
+/**
+ * Update permission level for existing provider access (wrapper for Firestore)
+ */
+export const updateAccessLevel = updateAccessLevelFirestore;
+
+/**
+ * Get access history with optional filters (wrapper for Firestore)
+ */
+export const getAccessHistory = getAccessHistoryFromFirestore;
+
+/**
+ * Get list of providers with current access (wrapper for Firestore)
+ */
+export const getProviderAccessList = getProviderAccessListFromFirestore;
+
+/**
+ * Search for providers (wrapper for Firestore with fallback)
+ */
+export const searchProviders = searchProvidersFirestore;
+
+/**
+ * Search for providers by name or NPI
+ * @deprecated Use searchProviders instead
+ */
+const searchProvidersMockLegacy = async (query, limit = 10) => {
   try {
     if (!query || query.length < 2) {
       return [];
@@ -500,11 +773,19 @@ export const formatPermissionLevel = (level) => {
 export default {
   validateAccessPermission,
   getProviderAccessList,
+  getProviderAccessListFromFirestore,
+  getProviderAccessRecord,
   grantProviderAccess,
+  grantProviderAccessFirestore,
   revokeProviderAccess,
+  revokeProviderAccessFirestore,
   updateAccessLevel,
+  updateAccessLevelFirestore,
   getAccessHistory,
+  getAccessHistoryFromFirestore,
   searchProviders,
+  searchProvidersFirestore,
+  onProviderAccessChange,
   calculateAccessExpiration,
   getAccessDataTypes,
   getPermissionLevelDetails,
