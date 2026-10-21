@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import DrugInteractionChecker from './DrugInteractionChecker';
 import LabAbnormalityAlert from './LabAbnormalityAlert';
+import PersonalizedRecommendations from './PersonalizedRecommendations';
 import '../styles/ClinicalAlertsDashboard.css';
 
 const ClinicalAlertsDashboard = ({ userId, medications = [], labResults = [] }) => {
@@ -126,6 +127,12 @@ const ClinicalAlertsDashboard = ({ userId, medications = [], labResults = [] }) 
           <span>Lab Abnormalities</span>
           {warningAlertsCount > 0 && <span className="badge warning">{warningAlertsCount}</span>}
         </button>
+        <button
+          className={`tab-button ${activeTab === 'recommendations' ? 'active' : ''}`}
+          onClick={() => setActiveTab('recommendations')}
+        >
+          <span>Recommendations</span>
+        </button>
       </div>
 
       {/* Tab Content */}
@@ -215,6 +222,17 @@ const ClinicalAlertsDashboard = ({ userId, medications = [], labResults = [] }) 
             <LabAbnormalityAlert
               labResults={labResults}
               userId={userId}
+            />
+          </div>
+        )}
+
+        {activeTab === 'recommendations' && (
+          <div className="recommendations-content">
+            <PersonalizedRecommendations
+              userId={userId}
+              conditions={medications.filter(m => typeof m === 'object' && m.indication)}
+              medications={medications}
+              labAbnormalities={labResults}
             />
           </div>
         )}
