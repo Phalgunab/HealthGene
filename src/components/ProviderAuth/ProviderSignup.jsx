@@ -1,610 +1,658 @@
 /**
- * Provider Signup Component
- * Multi-step healthcare provider registration
- * Phase 2 Sprint 5: Healthcare Provider Integration
+ * Provider Signup Component - Complete Refactored
+ * Secure provider registration with credentials, profile, and policy acceptance
+ * Dark Green theme with Firebase integration
  */
 
 import React, { useState } from 'react';
-import { Eye, EyeOff, Lock, Mail, User, Briefcase, AlertCircle, Loader, CheckCircle2, ArrowRight, ArrowLeft, Shield } from 'lucide-react';
 import {
-  validateProviderEmail,
-  validatePasswordStrength,
-  validateLicenseNumber,
-  validateHIPAAConsent,
-  PROVIDER_SPECIALTIES,
-  PROVIDER_ORG_TYPES,
-  SECURITY_QUESTIONS,
-} from '../../utils/providerAuth';
+  User, Mail, Lock, Phone, Building2, Stethoscope, AlertCircle,
+  Loader, CheckCircle2, ArrowRight, ArrowLeft, Shield, FileText
+} from 'lucide-react';
+import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { auth, db } from '../../firebase';
+import { doc, setDoc } from 'firebase/firestore';
+import PrivacyPolicyModal from './PrivacyPolicyModal';
 import '../../styles/ProviderAuth.css';
 
 const ProviderSignup = ({ onSignupSuccess, onNavigateToLogin }) => {
-  const [step, setStep] = useState(1); // 1-5
+  // Form steps: credentials, profile, policies, verification
+  const [step, setStep] = useState('credentials');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  
-  // Step 1: Email & Password
+
+  // Credentials state
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
-  const [termsAccepted, setTermsAccepted] = useState(false);
-  
-  // Step 2: Professional Info
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
+
+  // Profile state
+  const [fullName, setFullName] = useState('');
+  const [specialization, setSpecialization] = useState('');
   const [licenseNumber, setLicenseNumber] = useState('');
-  const [licenseState, setLicenseState] = useState('');
-  const [specialty, setSpecialty] = useState('');
-  const [organizationType, setOrganizationType] = useState('');
-  const [organizationName, setOrganizationName] = useState('');
-  
-  // Step 3: Organization Details
-  const [address, setAddress] = useState('');
+  const [hospitalName, setHospitalName] = useState('');
   const [phone, setPhone] = useState('');
-  const [yearsExperience, setYearsExperience] = useState('');
-  const [npiNumber, setNpiNumber] = useState('');
-  
-  // Step 4: Security Questions
-  const [selectedQuestions, setSelectedQuestions] = useState(['', '', '']);
-  const [answers, setAnswers] = useState(['', '', '']);
-  
-  // Step 5: HIPAA & MFA
-  const [hipaaConsents, setHipaaConsents] = useState({
-    terms: false,
-    privacy: false,
-    hipaa: false,
-    dataHandling: false,
-    responsibilities: false
-  });
-  const [enableMFA, setEnableMFA] = useState(true);
-  const [mfaSecret, setMfaSecret] = useState('');
-  
-  // Validation errors
-  const [errors, setErrors] = useState({});
 
-  const validateStep = () => {
-    const newErrors = {};
+  // Policies state
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
+  const [policiesAccepted, setPoliciesAccepted] = useState(false);
 
-    if (step === 1) {
-      if (!email) newErrors.email = 'Email is required';
-      else if (!validateProviderEmail(email)) newErrors.email = 'Invalid email format';
-      
-      if (!password) newErrors.password = 'Password is required';
-      else if (password.length < 8) newErrors.password = 'Password must be at least 8 characters';
-      
-      if (password !== confirmPassword) newErrors.confirmPassword = 'Passwords do not match';
-      
-      if (!termsAccepted) newErrors.terms = 'You must accept the terms';
-    } else if (step === 2) {
-      if (!firstName) newErrors.firstName = 'First name is required';
-      if (!lastName) newErrors.lastName = 'Last name is required';
-      if (!licenseNumber) newErrors.licenseNumber = 'License number is required';
-      if (!licenseState) newErrors.licenseState = 'License state is required';
-      if (!specialty) newErrors.specialty = 'Specialty is required';
-      if (!organizationType) newErrors.organizationType = 'Organization type is required';
-      if (!organizationName) newErrors.organizationName = 'Organization name is required';
-    } else if (step === 3) {
-      if (!address) newErrors.address = 'Address is required';
-      if (!phone) newErrors.phone = 'Phone number is required';
-      if (!yearsExperience) newErrors.yearsExperience = 'Years of experience is required';
-      if (!npiNumber) newErrors.npiNumber = 'NPI number is required';
-    } else if (step === 4) {
-      if (selectedQuestions.some(q => !q)) newErrors.questions = 'Select 3 security questions';
-      if (answers.some(a => !a)) newErrors.answers = 'Answer all security questions';
-    } else if (step === 5) {
-      const consent = validateHIPAAConsent(hipaaConsents);
-      if (!consent.isValid) newErrors.hipaa = consent.message;
+  // Field errors
+  const [fieldErrors, setFieldErrors] = useState({});
+
+  // Validation helpers
+  const validateEmail = (email) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
+  const validatePassword = (password) => {
+    // At least 8 chars, 1 uppercase, 1 number, 1 special char
+    return password.length >= 8 &&
+      /[A-Z]/.test(password) &&
+      /[0-9]/.test(password) &&
+      /[!@#$%^&*]/.test(password);
+  };
+
+  const validatePhone = (phone) => {
+    return /^[\d+\-\s()]{10,}$/.test(phone.replace(/\s/g, ''));
+  };
+
+  const clearFieldError = (field) => {
+    setFieldErrors(prev => {
+      const newErrors = { ...prev };
+      delete newErrors[field];
+      return newErrors;
+    });
+    setError('');
+  };
+
+  // Step 1: Credentials validation
+  const handleCredentialsNext = (e) => {
+    e.preventDefault();
+    const errors = {};
+
+    // Email validation
+    if (!email) {
+      errors.email = 'Email is required';
+    } else if (!validateEmail(email)) {
+      errors.email = 'Please enter a valid email address';
     }
 
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  const handleNext = () => {
-    if (validateStep()) {
-      setError('');
-      if (step < 5) setStep(step + 1);
-      else handleSubmit();
+    // Password validation
+    if (!password) {
+      errors.password = 'Password is required';
+    } else if (!validatePassword(password)) {
+      errors.password = 'Password must be at least 8 characters with 1 uppercase letter, 1 number, and 1 special character';
     }
+
+    // Confirm password validation
+    if (password !== confirmPassword) {
+      errors.confirmPassword = 'Passwords do not match';
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      return;
+    }
+
+    setFieldErrors({});
+    setStep('profile');
   };
 
-  const handleBack = () => {
-    if (step > 1) setStep(step - 1);
+  // Step 2: Profile validation
+  const handleProfileNext = (e) => {
+    e.preventDefault();
+    const errors = {};
+
+    if (!fullName || fullName.trim().length < 2) {
+      errors.fullName = 'Please enter your full name';
+    }
+
+    if (!specialization) {
+      errors.specialization = 'Please select your specialization';
+    }
+
+    if (!licenseNumber || licenseNumber.trim().length < 5) {
+      errors.licenseNumber = 'Please enter a valid license number';
+    }
+
+    if (!hospitalName || hospitalName.trim().length < 2) {
+      errors.hospitalName = 'Please enter your hospital/clinic name';
+    }
+
+    if (!phone) {
+      errors.phone = 'Phone number is required';
+    } else if (!validatePhone(phone)) {
+      errors.phone = 'Please enter a valid phone number';
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      return;
+    }
+
+    setFieldErrors({});
+    setStep('policies');
   };
 
-  const handleSubmit = async () => {
-    if (!validateStep()) return;
+  // Step 3: Policies acceptance
+  const handleAcceptPolicies = () => {
+    setPoliciesAccepted(true);
+    setShowPrivacyModal(false);
+    setStep('verification');
+  };
 
-    setLoading(true);
+  // Step 4: Account creation
+  const handleCreateAccount = async (e) => {
+    e.preventDefault();
     setError('');
     setSuccess('');
 
+    if (!policiesAccepted) {
+      setError('You must accept the privacy policy and terms of service');
+      return;
+    }
+
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      setLoading(true);
+      setSuccess('Creating your provider account...');
 
-      const providerData = {
-        email,
-        password,
-        firstName,
-        lastName,
+      // Create Firebase user
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+
+      // Update user profile
+      await updateProfile(user, {
+        displayName: fullName,
+      });
+
+      // Save provider data to Firestore
+      await setDoc(doc(db, 'providers', user.uid), {
+        uid: user.uid,
+        email: user.email,
+        fullName,
+        specialization,
         licenseNumber,
-        licenseState,
-        specialty,
-        organizationType,
-        organizationName,
-        address,
+        hospitalName,
         phone,
-        yearsExperience,
-        npiNumber,
-        securityAnswers: selectedQuestions.map((q, i) => ({ question: q, answer: answers[i] })),
-        hipaaConsent: hipaaConsents,
-        mfaEnabled: enableMFA,
-      };
+        role: 'provider',
+        status: 'pending_verification',
+        policiesAccepted: true,
+        acceptedAt: new Date().toISOString(),
+        mfaEnabled: false,
+        profileComplete: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
 
-      setSuccess('Provider account created successfully!');
+      setSuccess('Account created successfully! Redirecting...');
       setTimeout(() => {
-        if (onSignupSuccess) onSignupSuccess(providerData);
-      }, 1500);
+        onSignupSuccess({
+          uid: user.uid,
+          email: user.email,
+          displayName: fullName,
+          role: 'provider'
+        });
+      }, 2000);
     } catch (err) {
-      setError(err.message || 'Failed to create account. Please try again.');
+      setError(getErrorMessage(err.code));
+      setStep('verification');
+      console.error('Signup error:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  const passwordStrength = validatePasswordStrength(password);
+  const getErrorMessage = (errorCode) => {
+    const errorMap = {
+      'auth/email-already-in-use': 'This email is already registered. Please sign in or use a different email.',
+      'auth/invalid-email': 'Please enter a valid email address.',
+      'auth/weak-password': 'Password is too weak. Please use a stronger password.',
+      'auth/network-request-failed': 'Network error. Please check your connection.',
+      'auth/too-many-requests': 'Too many attempts. Please try again later.',
+    };
+    return errorMap[errorCode] || 'Registration failed. Please try again.';
+  };
 
-  return (
-    <div className="provider-auth-container">
-      <div className="provider-auth-card">
-        {/* Progress Indicator */}
-        <div className="provider-signup-progress">
-          {[1, 2, 3, 4, 5].map((s) => (
-            <div key={s} className={`progress-step ${s <= step ? 'active' : ''} ${s < step ? 'completed' : ''}`}>
-              <div className="step-circle">{s < step ? '✓' : s}</div>
-              <span className="step-label">
-                {s === 1 && 'Account'}
-                {s === 2 && 'Professional'}
-                {s === 3 && 'Organization'}
-                {s === 4 && 'Security'}
-                {s === 5 && 'Confirm'}
-              </span>
-            </div>
-          ))}
-        </div>
-
-        {error && (
-          <div className="provider-alert alert-error">
-            <AlertCircle size={20} />
-            <span>{error}</span>
+  // Step 1: Credentials
+  if (step === 'credentials') {
+    return (
+      <div className="provider-signup-container">
+        <div className="provider-signup-card">
+          <div className="signup-header">
+            <h1 className="signup-title">Register as Healthcare Provider</h1>
+            <p className="signup-subtitle">Step 1 of 4: Create Your Account</p>
           </div>
-        )}
 
-        {success && (
-          <div className="provider-alert alert-success">
-            <CheckCircle2 size={20} />
-            <span>{success}</span>
-          </div>
-        )}
-
-        {/* Step 1: Email & Password */}
-        {step === 1 && (
-          <div className="provider-step">
-            <h2>Create Your Account</h2>
-            <p className="step-description">Secure provider portal access with email verification</p>
-
+          <form onSubmit={handleCredentialsNext} className="signup-form">
+            {/* Email */}
             <div className="form-group">
-              <label htmlFor="email">Professional Email *</label>
-              <div className="input-wrapper">
+              <label className="form-label">
                 <Mail size={18} />
-                <input
-                  id="email"
-                  type="email"
-                  placeholder="you@hospital.com"
-                  value={email}
-                  onChange={(e) => { setEmail(e.target.value); if (errors.email) setErrors({ ...errors, email: '' }); }}
-                  className={errors.email ? 'error' : ''}
-                  disabled={loading}
-                  autoFocus
-                />
-              </div>
-              {errors.email && <span className="error-text">{errors.email}</span>}
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="password">Password *</label>
-              <div className="input-wrapper">
-                <Lock size={18} />
-                <input
-                  id="password"
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder="Create a strong password"
-                  value={password}
-                  onChange={(e) => { setPassword(e.target.value); if (errors.password) setErrors({ ...errors, password: '' }); }}
-                  className={errors.password ? 'error' : ''}
-                  disabled={loading}
-                />
-                <button type="button" onClick={() => setShowPassword(!showPassword)} className="icon-button">
-                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
-              </div>
-              {errors.password && <span className="error-text">{errors.password}</span>}
-
-              {password && (
-                <div className="password-strength">
-                  <div className="strength-bar">
-                    <div className="strength-fill" style={{ width: `${passwordStrength.score}%`, backgroundColor: passwordStrength.score < 40 ? '#dc2626' : passwordStrength.score < 70 ? '#f59e0b' : '#16a34a' }}></div>
-                  </div>
-                  <span className="strength-text">Strength: {passwordStrength.score.toFixed(0)}%</span>
-                </div>
-              )}
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="confirmPassword">Confirm Password *</label>
-              <div className="input-wrapper">
-                <Lock size={18} />
-                <input
-                  id="confirmPassword"
-                  type={showConfirm ? 'text' : 'password'}
-                  placeholder="Confirm your password"
-                  value={confirmPassword}
-                  onChange={(e) => { setConfirmPassword(e.target.value); if (errors.confirmPassword) setErrors({ ...errors, confirmPassword: '' }); }}
-                  className={errors.confirmPassword ? 'error' : ''}
-                  disabled={loading}
-                />
-                <button type="button" onClick={() => setShowConfirm(!showConfirm)} className="icon-button">
-                  {showConfirm ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
-              </div>
-              {errors.confirmPassword && <span className="error-text">{errors.confirmPassword}</span>}
-            </div>
-
-            <div className="checkbox-group">
-              <input
-                id="terms"
-                type="checkbox"
-                checked={termsAccepted}
-                onChange={(e) => { setTermsAccepted(e.target.checked); if (errors.terms) setErrors({ ...errors, terms: '' }); }}
-                disabled={loading}
-              />
-              <label htmlFor="terms">
-                I accept the <a href="#terms">Terms of Service</a> and <a href="#privacy">Privacy Policy</a>
+                Professional Email
               </label>
-            </div>
-            {errors.terms && <span className="error-text">{errors.terms}</span>}
-          </div>
-        )}
-
-        {/* Step 2: Professional Information */}
-        {step === 2 && (
-          <div className="provider-step">
-            <h2>Professional Information</h2>
-            <p className="step-description">Verify your healthcare credentials</p>
-
-            <div className="form-row">
-              <div className="form-group">
-                <label htmlFor="firstName">First Name *</label>
-                <input
-                  id="firstName"
-                  type="text"
-                  placeholder="First name"
-                  value={firstName}
-                  onChange={(e) => { setFirstName(e.target.value); if (errors.firstName) setErrors({ ...errors, firstName: '' }); }}
-                  className={errors.firstName ? 'error' : ''}
-                  disabled={loading}
-                  autoFocus
-                />
-                {errors.firstName && <span className="error-text">{errors.firstName}</span>}
-              </div>
-              <div className="form-group">
-                <label htmlFor="lastName">Last Name *</label>
-                <input
-                  id="lastName"
-                  type="text"
-                  placeholder="Last name"
-                  value={lastName}
-                  onChange={(e) => { setLastName(e.target.value); if (errors.lastName) setErrors({ ...errors, lastName: '' }); }}
-                  className={errors.lastName ? 'error' : ''}
-                  disabled={loading}
-                />
-                {errors.lastName && <span className="error-text">{errors.lastName}</span>}
-              </div>
-            </div>
-
-            <div className="form-row">
-              <div className="form-group">
-                <label htmlFor="specialty">Specialty *</label>
-                <select
-                  id="specialty"
-                  value={specialty}
-                  onChange={(e) => { setSpecialty(e.target.value); if (errors.specialty) setErrors({ ...errors, specialty: '' }); }}
-                  className={errors.specialty ? 'error' : ''}
-                  disabled={loading}
-                >
-                  <option value="">Select specialty...</option>
-                  {PROVIDER_SPECIALTIES.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-                {errors.specialty && <span className="error-text">{errors.specialty}</span>}
-              </div>
-              <div className="form-group">
-                <label htmlFor="licenseNumber">Medical License Number *</label>
-                <input
-                  id="licenseNumber"
-                  type="text"
-                  placeholder="License number"
-                  value={licenseNumber}
-                  onChange={(e) => { setLicenseNumber(e.target.value); if (errors.licenseNumber) setErrors({ ...errors, licenseNumber: '' }); }}
-                  className={errors.licenseNumber ? 'error' : ''}
-                  disabled={loading}
-                />
-                {errors.licenseNumber && <span className="error-text">{errors.licenseNumber}</span>}
-              </div>
-            </div>
-
-            <div className="form-row">
-              <div className="form-group">
-                <label htmlFor="licenseState">License State *</label>
-                <select
-                  id="licenseState"
-                  value={licenseState}
-                  onChange={(e) => { setLicenseState(e.target.value); if (errors.licenseState) setErrors({ ...errors, licenseState: '' }); }}
-                  className={errors.licenseState ? 'error' : ''}
-                  disabled={loading}
-                >
-                  <option value="">Select state...</option>
-                  {['AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY'].map(state => <option key={state} value={state}>{state}</option>)}
-                </select>
-                {errors.licenseState && <span className="error-text">{errors.licenseState}</span>}
-              </div>
-              <div className="form-group">
-                <label htmlFor="organizationType">Organization Type *</label>
-                <select
-                  id="organizationType"
-                  value={organizationType}
-                  onChange={(e) => { setOrganizationType(e.target.value); if (errors.organizationType) setErrors({ ...errors, organizationType: '' }); }}
-                  className={errors.organizationType ? 'error' : ''}
-                  disabled={loading}
-                >
-                  <option value="">Select type...</option>
-                  {PROVIDER_ORG_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
-                {errors.organizationType && <span className="error-text">{errors.organizationType}</span>}
-              </div>
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="organizationName">Organization Name *</label>
               <input
-                id="organizationName"
-                type="text"
-                placeholder="Hospital or clinic name"
-                value={organizationName}
-                onChange={(e) => { setOrganizationName(e.target.value); if (errors.organizationName) setErrors({ ...errors, organizationName: '' }); }}
-                className={errors.organizationName ? 'error' : ''}
-                disabled={loading}
+                type="email"
+                value={email}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  clearFieldError('email');
+                }}
+                placeholder="your@hospital.com"
+                className={`form-input ${fieldErrors.email ? 'error' : ''}`}
               />
-              {errors.organizationName && <span className="error-text">{errors.organizationName}</span>}
-            </div>
-          </div>
-        )}
-
-        {/* Step 3: Organization Details */}
-        {step === 3 && (
-          <div className="provider-step">
-            <h2>Organization Details</h2>
-            <p className="step-description">Complete your facility information</p>
-
-            <div className="form-group">
-              <label htmlFor="address">Organization Address *</label>
-              <input
-                id="address"
-                type="text"
-                placeholder="Street address"
-                value={address}
-                onChange={(e) => { setAddress(e.target.value); if (errors.address) setErrors({ ...errors, address: '' }); }}
-                className={errors.address ? 'error' : ''}
-                disabled={loading}
-                autoFocus
-              />
-              {errors.address && <span className="error-text">{errors.address}</span>}
-            </div>
-
-            <div className="form-row">
-              <div className="form-group">
-                <label htmlFor="phone">Contact Phone *</label>
-                <input
-                  id="phone"
-                  type="tel"
-                  placeholder="(555) 123-4567"
-                  value={phone}
-                  onChange={(e) => { setPhone(e.target.value); if (errors.phone) setErrors({ ...errors, phone: '' }); }}
-                  className={errors.phone ? 'error' : ''}
-                  disabled={loading}
-                />
-                {errors.phone && <span className="error-text">{errors.phone}</span>}
-              </div>
-              <div className="form-group">
-                <label htmlFor="yearsExperience">Years of Experience *</label>
-                <input
-                  id="yearsExperience"
-                  type="number"
-                  min="0"
-                  max="70"
-                  placeholder="Years"
-                  value={yearsExperience}
-                  onChange={(e) => { setYearsExperience(e.target.value); if (errors.yearsExperience) setErrors({ ...errors, yearsExperience: '' }); }}
-                  className={errors.yearsExperience ? 'error' : ''}
-                  disabled={loading}
-                />
-                {errors.yearsExperience && <span className="error-text">{errors.yearsExperience}</span>}
-              </div>
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="npiNumber">NPI Number (National Provider ID) *</label>
-              <input
-                id="npiNumber"
-                type="text"
-                placeholder="10-digit NPI number"
-                value={npiNumber}
-                onChange={(e) => { setNpiNumber(e.target.value); if (errors.npiNumber) setErrors({ ...errors, npiNumber: '' }); }}
-                className={errors.npiNumber ? 'error' : ''}
-                disabled={loading}
-                maxLength="10"
-              />
-              {errors.npiNumber && <span className="error-text">{errors.npiNumber}</span>}
-            </div>
-          </div>
-        )}
-
-        {/* Step 4: Security Questions */}
-        {step === 4 && (
-          <div className="provider-step">
-            <h2>Security Questions</h2>
-            <p className="step-description">Set up account recovery questions</p>
-
-            {[0, 1, 2].map((index) => (
-              <div key={index} className="security-question-group">
-                <label>Security Question {index + 1} *</label>
-                <select
-                  value={selectedQuestions[index]}
-                  onChange={(e) => {
-                    const newQuestions = [...selectedQuestions];
-                    newQuestions[index] = e.target.value;
-                    setSelectedQuestions(newQuestions);
-                  }}
-                  className={errors.questions ? 'error' : ''}
-                  disabled={loading}
-                >
-                  <option value="">Select a question...</option>
-                  {SECURITY_QUESTIONS.filter(q => !selectedQuestions.includes(q) || selectedQuestions[index] === q).map(q => (
-                    <option key={q} value={q}>{q}</option>
-                  ))}
-                </select>
-                
-                {selectedQuestions[index] && (
-                  <input
-                    type="text"
-                    placeholder="Your answer"
-                    value={answers[index]}
-                    onChange={(e) => {
-                      const newAnswers = [...answers];
-                      newAnswers[index] = e.target.value;
-                      setAnswers(newAnswers);
-                    }}
-                    disabled={loading}
-                    className="answer-input"
-                  />
-                )}
-              </div>
-            ))}
-            {errors.questions && <span className="error-text">{errors.questions}</span>}
-          </div>
-        )}
-
-        {/* Step 5: HIPAA & MFA */}
-        {step === 5 && (
-          <div className="provider-step">
-            <h2>HIPAA Compliance & Security</h2>
-            <p className="step-description">Final setup for secure healthcare provider access</p>
-
-            <div className="hipaa-section">
-              <h3><Shield size={20} /> HIPAA Agreements</h3>
-              
-              {[
-                { key: 'terms', label: 'Terms of Service' },
-                { key: 'privacy', label: 'Privacy Policy' },
-                { key: 'hipaa', label: 'HIPAA Compliance Agreement' },
-                { key: 'dataHandling', label: 'Secure Data Handling Standards' },
-                { key: 'responsibilities', label: 'Professional Responsibilities' }
-              ].map(item => (
-                <div key={item.key} className="checkbox-group hipaa-checkbox">
-                  <input
-                    id={item.key}
-                    type="checkbox"
-                    checked={hipaaConsents[item.key]}
-                    onChange={(e) => {
-                      setHipaaConsents({ ...hipaaConsents, [item.key]: e.target.checked });
-                      if (errors.hipaa) setErrors({ ...errors, hipaa: '' });
-                    }}
-                    disabled={loading}
-                  />
-                  <label htmlFor={item.key}>{item.label}</label>
-                </div>
-              ))}
-              {errors.hipaa && <span className="error-text">{errors.hipaa}</span>}
-            </div>
-
-            <div className="mfa-section">
-              <h3><Lock size={20} /> Two-Factor Authentication</h3>
-              <div className="checkbox-group">
-                <input
-                  id="enableMFA"
-                  type="checkbox"
-                  checked={enableMFA}
-                  onChange={(e) => setEnableMFA(e.target.checked)}
-                  disabled={loading}
-                />
-                <label htmlFor="enableMFA">Enable MFA with authenticator app (Google Authenticator, Authy, Microsoft Authenticator)</label>
-              </div>
-              {enableMFA && (
-                <div className="mfa-setup-info">
-                  <p>📱 After registration, you'll be prompted to set up your authenticator app for account security.</p>
+              {fieldErrors.email && (
+                <div className="form-error">
+                  <AlertCircle size={16} />
+                  {fieldErrors.email}
                 </div>
               )}
             </div>
+
+            {/* Password */}
+            <div className="form-group">
+              <label className="form-label">
+                <Lock size={18} />
+                Password
+              </label>
+              <div className="password-input-group">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    clearFieldError('password');
+                  }}
+                  placeholder="At least 8 characters"
+                  className={`form-input ${fieldErrors.password ? 'error' : ''}`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="password-toggle"
+                >
+                  {showPassword ? 'Hide' : 'Show'}
+                </button>
+              </div>
+              {fieldErrors.password && (
+                <div className="form-error">
+                  <AlertCircle size={16} />
+                  {fieldErrors.password}
+                </div>
+              )}
+            </div>
+
+            {/* Confirm Password */}
+            <div className="form-group">
+              <label className="form-label">Confirm Password</label>
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={confirmPassword}
+                onChange={(e) => {
+                  setConfirmPassword(e.target.value);
+                  clearFieldError('confirmPassword');
+                }}
+                placeholder="Re-enter your password"
+                className={`form-input ${fieldErrors.confirmPassword ? 'error' : ''}`}
+              />
+              {fieldErrors.confirmPassword && (
+                <div className="form-error">
+                  <AlertCircle size={16} />
+                  {fieldErrors.confirmPassword}
+                </div>
+              )}
+            </div>
+
+            {error && (
+              <div className="alert alert-error">
+                <AlertCircle size={18} />
+                {error}
+              </div>
+            )}
+
+            <div className="form-button-group">
+              <button
+                type="button"
+                onClick={onNavigateToLogin}
+                className="form-button-secondary"
+              >
+                <ArrowLeft size={18} />
+                Back to Login
+              </button>
+              <button
+                type="submit"
+                className="form-button-primary"
+              >
+                <span>Next</span>
+                <ArrowRight size={18} />
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  // Step 2: Profile
+  if (step === 'profile') {
+    const specializations = [
+      'General Practice',
+      'Cardiology',
+      'Orthopedics',
+      'Pediatrics',
+      'Neurology',
+      'Psychiatry',
+      'Dermatology',
+      'Surgery',
+      'Other'
+    ];
+
+    return (
+      <div className="provider-signup-container">
+        <div className="provider-signup-card">
+          <div className="signup-header">
+            <h1 className="signup-title">Professional Profile</h1>
+            <p className="signup-subtitle">Step 2 of 4: Your Information</p>
           </div>
-        )}
 
-        {/* Form Navigation */}
-        <div className="provider-form-footer">
-          <button
-            type="button"
-            onClick={handleBack}
-            disabled={step === 1 || loading}
-            className="btn-secondary"
-          >
-            <ArrowLeft size={18} /> Back
-          </button>
-          
-          <button
-            type="button"
-            onClick={handleNext}
-            disabled={loading}
-            className="btn-primary"
-          >
-            {loading ? <Loader size={18} className="animate-spin" /> : null}
-            {step === 5 ? 'Complete Registration' : 'Next'}
-            {!loading && <ArrowRight size={18} />}
-          </button>
-        </div>
+          <form onSubmit={handleProfileNext} className="signup-form">
+            {/* Full Name */}
+            <div className="form-group">
+              <label className="form-label">
+                <User size={18} />
+                Full Name
+              </label>
+              <input
+                type="text"
+                value={fullName}
+                onChange={(e) => {
+                  setFullName(e.target.value);
+                  clearFieldError('fullName');
+                }}
+                placeholder="Dr. John Doe"
+                className={`form-input ${fieldErrors.fullName ? 'error' : ''}`}
+              />
+              {fieldErrors.fullName && (
+                <div className="form-error">
+                  <AlertCircle size={16} />
+                  {fieldErrors.fullName}
+                </div>
+              )}
+            </div>
 
-        {/* Login Link */}
-        <div className="provider-auth-footer">
-          Already have an account? <a href="#" onClick={() => onNavigateToLogin && onNavigateToLogin()}>Sign in here</a>
+            {/* Specialization */}
+            <div className="form-group">
+              <label className="form-label">
+                <Stethoscope size={18} />
+                Medical Specialization
+              </label>
+              <select
+                value={specialization}
+                onChange={(e) => {
+                  setSpecialization(e.target.value);
+                  clearFieldError('specialization');
+                }}
+                className={`form-input ${fieldErrors.specialization ? 'error' : ''}`}
+              >
+                <option value="">Select your specialization</option>
+                {specializations.map(spec => (
+                  <option key={spec} value={spec}>{spec}</option>
+                ))}
+              </select>
+              {fieldErrors.specialization && (
+                <div className="form-error">
+                  <AlertCircle size={16} />
+                  {fieldErrors.specialization}
+                </div>
+              )}
+            </div>
+
+            {/* License Number */}
+            <div className="form-group">
+              <label className="form-label">
+                <FileText size={18} />
+                License Number
+              </label>
+              <input
+                type="text"
+                value={licenseNumber}
+                onChange={(e) => {
+                  setLicenseNumber(e.target.value);
+                  clearFieldError('licenseNumber');
+                }}
+                placeholder="Medical license number"
+                className={`form-input ${fieldErrors.licenseNumber ? 'error' : ''}`}
+              />
+              {fieldErrors.licenseNumber && (
+                <div className="form-error">
+                  <AlertCircle size={16} />
+                  {fieldErrors.licenseNumber}
+                </div>
+              )}
+            </div>
+
+            {/* Hospital/Clinic */}
+            <div className="form-group">
+              <label className="form-label">
+                <Building2 size={18} />
+                Hospital/Clinic Name
+              </label>
+              <input
+                type="text"
+                value={hospitalName}
+                onChange={(e) => {
+                  setHospitalName(e.target.value);
+                  clearFieldError('hospitalName');
+                }}
+                placeholder="Your healthcare facility"
+                className={`form-input ${fieldErrors.hospitalName ? 'error' : ''}`}
+              />
+              {fieldErrors.hospitalName && (
+                <div className="form-error">
+                  <AlertCircle size={16} />
+                  {fieldErrors.hospitalName}
+                </div>
+              )}
+            </div>
+
+            {/* Phone */}
+            <div className="form-group">
+              <label className="form-label">
+                <Phone size={18} />
+                Contact Phone
+              </label>
+              <input
+                type="tel"
+                value={phone}
+                onChange={(e) => {
+                  setPhone(e.target.value);
+                  clearFieldError('phone');
+                }}
+                placeholder="+1 (555) 123-4567"
+                className={`form-input ${fieldErrors.phone ? 'error' : ''}`}
+              />
+              {fieldErrors.phone && (
+                <div className="form-error">
+                  <AlertCircle size={16} />
+                  {fieldErrors.phone}
+                </div>
+              )}
+            </div>
+
+            <div className="form-button-group">
+              <button
+                type="button"
+                onClick={() => setStep('credentials')}
+                className="form-button-secondary"
+              >
+                <ArrowLeft size={18} />
+                Back
+              </button>
+              <button
+                type="submit"
+                className="form-button-primary"
+              >
+                <span>Next</span>
+                <ArrowRight size={18} />
+              </button>
+            </div>
+          </form>
         </div>
       </div>
+    );
+  }
 
-      {/* Security Sidebar */}
-      <div className="provider-auth-sidebar">
-        <h3>Security Features</h3>
-        <ul>
-          <li>✓ Professional email verification</li>
-          <li>✓ Strong password encryption</li>
-          <li>✓ License validation system</li>
-          <li>✓ Security questions setup</li>
-          <li>✓ HIPAA compliance ready</li>
-          <li>✓ Two-factor authentication</li>
-          <li>✓ Secure audit logging</li>
-          <li>✓ Data access controls</li>
-        </ul>
+  // Step 3: Policies
+  if (step === 'policies') {
+    return (
+      <div className="provider-signup-container">
+        <div className="provider-signup-card">
+          <div className="signup-header">
+            <h1 className="signup-title">Privacy & Terms</h1>
+            <p className="signup-subtitle">Step 3 of 4: Review Policies</p>
+          </div>
+
+          <div className="policies-content">
+            <div className="policy-card">
+              <Shield size={24} />
+              <h3>Privacy & Compliance</h3>
+              <p>Your data is protected with HIPAA-compliant security measures and end-to-end encryption.</p>
+            </div>
+
+            <div className="policy-card">
+              <FileText size={24} />
+              <h3>Terms of Service</h3>
+              <p>By using HealthGene, you agree to our terms of service and professional conduct standards.</p>
+            </div>
+
+            <button
+              onClick={() => setShowPrivacyModal(true)}
+              className="read-policies-btn"
+            >
+              Read Full Policies
+            </button>
+
+            <label className="checkbox-label large">
+              <input
+                type="checkbox"
+                checked={policiesAccepted}
+                onChange={(e) => setPoliciesAccepted(e.target.checked)}
+              />
+              <span>I accept the Privacy Policy and Terms of Service</span>
+            </label>
+          </div>
+
+          <div className="form-button-group">
+            <button
+              onClick={() => setStep('profile')}
+              className="form-button-secondary"
+            >
+              <ArrowLeft size={18} />
+              Back
+            </button>
+            <button
+              onClick={() => setStep('verification')}
+              disabled={!policiesAccepted}
+              className="form-button-primary"
+            >
+              <span>Next</span>
+              <ArrowRight size={18} />
+            </button>
+          </div>
+        </div>
+
+        <PrivacyPolicyModal
+          isOpen={showPrivacyModal}
+          onAccept={handleAcceptPolicies}
+          onDecline={() => setShowPrivacyModal(false)}
+          showCheckbox={true}
+        />
       </div>
-    </div>
-  );
+    );
+  }
+
+  // Step 4: Verification & Account Creation
+  if (step === 'verification') {
+    return (
+      <div className="provider-signup-container">
+        <div className="provider-signup-card">
+          <div className="signup-header">
+            <h1 className="signup-title">Create Your Account</h1>
+            <p className="signup-subtitle">Step 4 of 4: Confirm Details</p>
+          </div>
+
+          <div className="verification-summary">
+            <div className="summary-item">
+              <span className="label">Email:</span>
+              <span className="value">{email}</span>
+            </div>
+            <div className="summary-item">
+              <span className="label">Name:</span>
+              <span className="value">{fullName}</span>
+            </div>
+            <div className="summary-item">
+              <span className="label">Specialization:</span>
+              <span className="value">{specialization}</span>
+            </div>
+            <div className="summary-item">
+              <span className="label">Hospital:</span>
+              <span className="value">{hospitalName}</span>
+            </div>
+          </div>
+
+          {error && (
+            <div className="alert alert-error">
+              <AlertCircle size={18} />
+              {error}
+            </div>
+          )}
+
+          {success && (
+            <div className="alert alert-success">
+              <CheckCircle2 size={18} />
+              {success}
+            </div>
+          )}
+
+          <form onSubmit={handleCreateAccount} className="signup-form">
+            <button
+              type="submit"
+              disabled={loading}
+              className="form-button-primary"
+            >
+              {loading ? (
+                <>
+                  <Loader size={18} className="spinner" />
+                  Creating Account...
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 size={18} />
+                  Create Account
+                </>
+              )}
+            </button>
+          </form>
+
+          <div className="form-button-group">
+            <button
+              onClick={() => setStep('policies')}
+              disabled={loading}
+              className="form-link"
+            >
+              <ArrowLeft size={18} />
+              Back to Policies
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
 };
 
 export default ProviderSignup;
