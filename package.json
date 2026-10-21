@@ -12,8 +12,12 @@
     "deploy": "gh-pages -d dist"
   },
   "dependencies": {
+    "@sentry/react": "^11.8.0",
+    "@sentry/tracing": "^7.120.4",
     "@vitejs/plugin-react": "latest",
-    "firebase": "^12.19.0",
+    "dompurify": "^3.4.17",
+    "firebase": "^9.14.0",
+    "isomorphic-unfetch": "^4.0.2",
     "lucide-react": "latest",
     "pdfjs-dist": "^6.3.289",
     "react": "latest",
@@ -22,6 +26,6 @@
     "vite": "latest"
   },
   "devDependencies": {
-    "gh-pages": "^6.3.0"
+    "gh-pages": "^6.1.1"
   }
 }

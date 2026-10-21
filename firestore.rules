@@ -2,8 +2,74 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    function isValidDocument() {
+      let data = request.resource.data;
+      // Ensure document isn't too large (max 1MB)
+      return request.resource.size < 1000000;
+    }
+
+    function isValidTimestamp() {
+      // Prevent backdated or future entries
+      let now = request.time;
+      return request.resource.data.keys().hasAll(['createdAt']) == false ||
+             (request.resource.data.createdAt <= now);
+    }
+
+    // User data
     match /users/{userId}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if isAuthenticated() && isOwner(userId) && isValidDocument();
+
+      // Profile data
+      match /profile/{document=**} {
+        allow read, write: if isAuthenticated() && isOwner(userId);
+      }
+
+      // Health records
+      match /records/{recordId} {
+        allow read: if isAuthenticated() && isOwner(userId);
+        allow write: if isAuthenticated() && isOwner(userId) && isValidDocument();
+        allow delete: if isAuthenticated() && isOwner(userId);
+      }
+
+      // Family members
+      match /familyMembers/{memberId} {
+        allow read, write: if isAuthenticated() && isOwner(userId);
+      }
+
+      // MFA Settings
+      match /mfaSettings/{document=**} {
+        allow read, write: if isAuthenticated() && isOwner(userId);
+      }
+
+      // Trusted Devices
+      match /trustedDevices/{device=**} {
+        allow read, write: if isAuthenticated() && isOwner(userId);
+      }
+
+      // Backup Codes
+      match /backupCodes/{code=**} {
+        allow read, write: if isAuthenticated() && isOwner(userId);
+      }
+    }
+
+    // OTP Sessions (temporary, user-specific)
+    match /otpSessions/{sessionId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Deny all other access
+    match /{document=**} {
+      allow read, write: false;
     }
   }
 }
+

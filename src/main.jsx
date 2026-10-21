@@ -11,6 +11,26 @@ import './styles.css';
 import { auth, db, googleProvider } from './firebase';
 import { onAuthStateChanged, RecaptchaVerifier, signInWithPhoneNumber, signInWithPopup, signOut } from 'firebase/auth';
 import { addDoc, collection, deleteDoc, doc, getDocs, getDoc, setDoc } from 'firebase/firestore';
+import { sanitizeInput, escapeText } from './utils/security';
+import { ConsentModal } from './components/ConsentModal';
+import { initSentry } from './utils/sentryConfig';
+import ErrorBoundary from './components/ErrorBoundary';
+import { firestoreLimiter } from './utils/rateLimiter';
+import SessionTimeoutManager from './utils/sessionTimeout';
+import SessionTimeoutWarning from './components/SessionTimeoutWarning';
+import BiometricAuth from './components/BiometricAuth';
+import BiometricSettings from './components/BiometricSettings';
+import MFASetup from './components/MFASetup';
+import MFAVerification from './components/MFAVerification';
+import BackupCodes from './components/BackupCodes';
+import MFASettings from './components/MFASettings';
+import { getMFASettings } from './utils/mfaHelper';
+import { trustDevice, isDeviceTrusted } from './utils/deviceTrustHelper';
+
+// Initialize Sentry for production error tracking
+if (import.meta.env.MODE === 'production') {
+  initSentry();
+}
 
 const countryCodes = [
   ['India (+91)', '+91'],
@@ -25,7 +45,7 @@ const records = [];
 const notifications = [
   { id: 1, title: 'New lab result added', detail: 'Your annual blood work is ready to review.', time: '10 min ago', unread: true },
   { id: 2, title: 'Appointment reminder', detail: 'Dental cleaning scheduled for October 14.', time: '2 hours ago', unread: true },
-  { id: 3, title: 'Record saved privately', detail: 'Knee MRI scan was added to Swetha NAYANI’s timeline.', time: 'Yesterday', unread: false },
+  { id: 3, title: 'Record saved privately', detail: 'MRI scan was added to family member profile.', time: 'Yesterday', unread: false },
 ];
 
 const searchExamples = ['Fever in last month', 'Apollo visit last month', 'Lab reports for Swetha'];
@@ -147,6 +167,10 @@ function App() {
   const [authenticated, setAuthenticated] = useState(false);
   const [authReady, setAuthReady] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
+  const [showConsentModal, setShowConsentModal] = useState(false);
+  const [userConsent, setUserConsent] = useState(null);
+  const [showTimeoutWarning, setShowTimeoutWarning] = useState(false);
+  const [timeoutCountdown, setTimeoutCountdown] = useState(900); // 15 minutes in seconds
   const [tab, setTab] = useState('Home');
   const [showAdd, setShowAdd] = useState(false);
   const [showNotice, setShowNotice] = useState(false);
@@ -172,6 +196,18 @@ function App() {
     emergencyContact: '',
   });
   const [items, setItems] = useState([]);
+  const sessionTimeout = useRef(null);
+  const [authError, setAuthError] = useState('');
+  const [biometricCredentials, setBiometricCredentials] = useState([]);
+  const [showBiometricEnroll, setShowBiometricEnroll] = useState(false);
+  // MFA state
+  const [mfaEnabled, setMFAEnabled] = useState(false);
+  const [mfaMethod, setMFAMethod] = useState('sms');
+  const [showMFASetup, setShowMFASetup] = useState(false);
+  const [showMFAVerify, setShowMFAVerify] = useState(false);
+  const [showMFASettings, setShowMFASettings] = useState(false);
+  const [mfaSettings, setMFASettings] = useState(null);
+  const [trustedDeviceId, setTrustedDeviceId] = useState(null);
   const activeInitials = activePerson.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase();
 
   useEffect(() => onAuthStateChanged(auth, (user) => {
@@ -179,6 +215,118 @@ function App() {
     setAuthenticated(Boolean(user));
     setAuthReady(true);
   }), []);
+
+  // Check for consent on authentication
+  useEffect(() => {
+    if (authenticated && currentUser) {
+      const saved = localStorage.getItem('consentAccepted');
+      if (!saved) {
+        setShowConsentModal(true);
+      } else {
+        setUserConsent(JSON.parse(saved));
+      }
+    }
+  }, [authenticated, currentUser]);
+
+  // Load biometric credentials on authentication
+  useEffect(() => {
+    if (authenticated && currentUser) {
+      const loadBiometricCredentials = async () => {
+        try {
+          const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+          if (userDoc.exists() && userDoc.data().biometricCredentials) {
+            setBiometricCredentials(userDoc.data().biometricCredentials || []);
+          }
+        } catch (error) {
+          console.warn('Could not load biometric credentials:', error);
+        }
+      };
+      loadBiometricCredentials();
+    }
+  }, [authenticated, currentUser]);
+
+  // Load MFA settings on authentication
+  useEffect(() => {
+    if (authenticated && currentUser) {
+      const loadMFASettings = async () => {
+        try {
+          const settings = await getMFASettings(currentUser.uid);
+          if (settings) {
+            setMFASettings(settings);
+            setMFAEnabled(settings.enabled || false);
+            setMFAMethod(settings.method || 'sms');
+          }
+          
+          // Check if device is already trusted
+          const trusted = await isDeviceTrusted(currentUser.uid);
+          if (trusted) {
+            setTrustedDeviceId(trusted.deviceId);
+          }
+        } catch (error) {
+          console.warn('Could not load MFA settings:', error);
+        }
+      };
+      loadMFASettings();
+    }
+  }, [authenticated, currentUser]);
+
+  // Initialize session timeout on authentication
+  useEffect(() => {
+    if (authenticated && currentUser) {
+      sessionTimeout.current = new SessionTimeoutManager();
+      
+      // On warning (14 minutes)
+      sessionTimeout.current.onWarning = () => {
+        setShowTimeoutWarning(true);
+        // Start countdown from 60 seconds
+        let countdown = 60;
+        const interval = setInterval(() => {
+          setTimeoutCountdown(countdown);
+          countdown--;
+          if (countdown < 0) clearInterval(interval);
+        }, 1000);
+      };
+
+      // On timeout (15 minutes)
+      sessionTimeout.current.onTimeout = () => {
+        setShowTimeoutWarning(false);
+        signOut(auth);
+        setAuthenticated(false);
+        setAuthError('Your session has expired. Please log in again.');
+      };
+
+      sessionTimeout.current.start();
+
+      return () => {
+        if (sessionTimeout.current) {
+          sessionTimeout.current.stop();
+        }
+      };
+    }
+  }, [authenticated, currentUser]);
+
+  // Reset session timer on user activity
+  useEffect(() => {
+    if (!authenticated || !sessionTimeout.current) return;
+
+    const events = ['mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
+    
+    const handleActivity = () => {
+      if (sessionTimeout.current && !showTimeoutWarning) {
+        sessionTimeout.current.reset();
+      }
+    };
+
+    events.forEach(event => {
+      document.addEventListener(event, handleActivity, true);
+    });
+
+    return () => {
+      events.forEach(event => {
+        document.removeEventListener(event, handleActivity, true);
+      });
+    };
+  }, [authenticated, showTimeoutWarning]);
 
   useEffect(() => {
     if (!currentUser) return undefined;
@@ -227,6 +375,12 @@ function App() {
       notes: details?.notes?.trim() || '',
     };
 
+    // Check rate limiting
+    if (!firestoreLimiter.isAllowed()) {
+      setAuthError('Too many requests. Please wait a moment before saving another record.');
+      return;
+    }
+
     setItems([record, ...items]);
     if (currentUser) addDoc(collection(db, 'users', currentUser.uid, 'records'), serializeRecord(record)).catch(error => console.error('Could not save record', error));
     setShowAdd(false);
@@ -242,6 +396,12 @@ function App() {
   };
 
   const addFamilyMember = async (member) => {
+    // Check rate limiting
+    if (!firestoreLimiter.isAllowed()) {
+      setAuthError('Too many requests. Please wait a moment before adding another member.');
+      return;
+    }
+
     setFamilyList(current => [...current, member]);
     setActivePerson(member.name);
     setShowAddFamily(false);
@@ -249,6 +409,12 @@ function App() {
   };
 
   const updateFamilyMember = async (updatedMember, originalName) => {
+    // Check rate limiting
+    if (!firestoreLimiter.isAllowed()) {
+      setAuthError('Too many requests. Please wait a moment before updating.');
+      return;
+    }
+
     setFamilyList(current => current.map(member => member.name === originalName ? updatedMember : member));
     setActivePerson(updatedMember.name);
     setEditingMember(null);
@@ -256,6 +422,12 @@ function App() {
   };
 
   const deleteFamilyMember = async (member) => {
+    // Check rate limiting
+    if (!firestoreLimiter.isAllowed()) {
+      setAuthError('Too many requests. Please wait a moment before deleting.');
+      return;
+    }
+
     const remaining = familyList.filter(item => item.name !== member.name);
     setFamilyList(remaining);
     setActivePerson(remaining[0]?.name || '');
@@ -263,10 +435,63 @@ function App() {
     if (currentUser && member.id) await deleteDoc(doc(db, 'users', currentUser.uid, 'familyMembers', member.id));
   };
 
+  const handleConsentAccept = async () => {
+    // Check rate limiting
+    if (!firestoreLimiter.isAllowed()) {
+      console.warn('Rate limit: Could not save consent');
+      return;
+    }
+
+    setShowConsentModal(false);
+    
+    // Save consent to Firestore
+    if (currentUser) {
+      try {
+        await setDoc(
+          doc(db, 'users', currentUser.uid),
+          {
+            consentAccepted: true,
+            consentTimestamp: new Date().toISOString(),
+            consentVersion: '1.0',
+          },
+          { merge: true }
+        );
+      } catch (error) {
+        console.error('Error saving consent to Firestore:', error);
+      }
+    }
+    
+    setUserConsent(JSON.parse(localStorage.getItem('consentAccepted')));
+  };
+
+  const handleConsentDecline = () => {
+    console.warn('User declined consent');
+    setShowConsentModal(false);
+  };
+
   if (!authReady) return null;
-  if (!authenticated) return <AuthScreen />;
+  if (!authenticated) return <AuthScreen biometricCredentials={biometricCredentials} currentUser={currentUser} />;
 
   return <main className="app-shell">
+    <ConsentModal
+      isOpen={showConsentModal}
+      onAccept={handleConsentAccept}
+      onDecline={handleConsentDecline}
+    />
+    <SessionTimeoutWarning
+      isOpen={showTimeoutWarning}
+      countdown={timeoutCountdown}
+      onContinue={() => {
+        setShowTimeoutWarning(false);
+        if (sessionTimeout.current) {
+          sessionTimeout.current.reset();
+        }
+      }}
+      onLogout={() => {
+        signOut(auth);
+        setShowTimeoutWarning(false);
+      }}
+    />
     <section className="mobile-app">
       <header className="topbar">
         <div className="brand"><span className="brand-mark"><HeartPulse size={17}/></span><span>MyFamilyHealth</span></div>
@@ -279,7 +504,7 @@ function App() {
         {tab === 'Home' && (showTimeline ? <TimelinePage items={items} selectedRecord={timelineRecord} onSelectRecord={setTimelineRecord} onBack={() => { setShowTimeline(false); setTimelineRecord(null); }} /> : <HomeScreen activePerson={activePerson} setActivePerson={setActivePerson} items={items} onAdd={() => setShowAdd(true)} onViewTimeline={() => setShowTimeline(true)} showNotifications={showNotifications} toggleNotifications={() => setShowNotifications(open => !open)} />)}
         {tab === 'Records' && (recordDetail ? <RecordDetailPage record={recordDetail} onBack={() => setRecordDetail(null)} /> : <RecordsScreen items={items} searchTerm={searchTerm} setSearchTerm={setSearchTerm} onAdd={() => setShowAdd(true)} onOpenRecord={setRecordDetail} />)}
         {tab === 'Family' && (showAddFamily ? <AddFamilyMemberPage onBack={() => setShowAddFamily(false)} onSave={addFamilyMember} /> : editingMember ? <EditFamilyMemberPage member={editingMember} onBack={() => setEditingMember(null)} onSave={(updatedMember) => updateFamilyMember(updatedMember, editingMember.name)} onDelete={() => deleteFamilyMember(editingMember)} /> : <FamilyScreen activePerson={activePerson} setActivePerson={setActivePerson} familyList={familyList} onAddMember={() => setShowAddFamily(true)} onOpenMember={setEditingMember} />)}
-        {tab === 'Profile' && (editProfile ? <EditProfilePage details={profileDetails} onBack={() => setEditProfile(false)} onSave={saveProfile} /> : settingsPage ? <SettingsPage page={settingsPage} activePerson={activePerson} items={items} onBack={() => setSettingsPage(null)} /> : <ProfileScreen activePerson={activePerson} profileDetails={profileDetails} onLogout={() => signOut(auth)} openSettings={setSettingsPage} openEditProfile={() => setEditProfile(true)} />)}
+        {tab === 'Profile' && (editProfile ? <EditProfilePage details={profileDetails} onBack={() => setEditProfile(false)} onSave={saveProfile} /> : settingsPage ? <SettingsPage page={settingsPage} activePerson={activePerson} items={items} onBack={() => setSettingsPage(null)} currentUser={currentUser} biometricCredentials={biometricCredentials} mfaEnabled={mfaEnabled} mfaMethod={mfaMethod} mfaSettings={mfaSettings} onShowMFASetup={() => setShowMFASetup(true)} onShowMFASettings={() => setShowMFASettings(true)} /> : <ProfileScreen activePerson={activePerson} profileDetails={profileDetails} onLogout={() => signOut(auth)} openSettings={setSettingsPage} openEditProfile={() => setEditProfile(true)} />)}
       </div>
 
       <nav className="bottom-nav">
@@ -292,7 +517,7 @@ function App() {
   </main>;
 }
 
-function AuthScreen() {
+function AuthScreen({ biometricCredentials = [], currentUser = null }) {
   const [screen, setScreen] = useState('welcome');
   const [phone, setPhone] = useState('');
   const [countryCode, setCountryCode] = useState('+91');
@@ -301,6 +526,9 @@ function AuthScreen() {
   const [legalPage, setLegalPage] = useState(null);
   const [authError, setAuthError] = useState('');
   const [confirmationResult, setConfirmationResult] = useState(null);
+  const [userMFAEnabled, setUserMFAEnabled] = useState(false);
+  const [userMFAMethod, setUserMFAMethod] = useState('sms');
+  const [mfaSessionId, setMFASessionId] = useState(null);
   const recaptchaRef = useRef(null);
   const title = screen === 'signup' ? 'Create your account' : 'Welcome back';
   const showAuthError = (error) => {
@@ -342,9 +570,54 @@ function AuthScreen() {
     event.preventDefault();
     setAuthError('');
     try {
-      await confirmationResult.confirm(code);
+      const userCredential = await confirmationResult.confirm(code);
+      
+      // Check if user has MFA enabled
+      if (userCredential.user) {
+        const mfaSettings = await getMFASettings(userCredential.user.uid);
+        
+        if (mfaSettings && mfaSettings.enabled) {
+          // MFA is enabled - require OTP verification
+          setUserMFAEnabled(true);
+          setUserMFAMethod(mfaSettings.method || 'sms');
+          setMFASessionId(`session_${Date.now()}`);
+          setScreen('mfa-verify');
+        } else {
+          // No MFA - direct access
+          setScreen('success');
+        }
+      }
     } catch (error) {
       showAuthError(error);
+    }
+  };
+
+  const handleMFAVerifySuccess = async (result) => {
+    try {
+      if (result.rememberDevice && mfaSessionId) {
+        // Trust this device for 30 days
+        await trustDevice(currentUser?.uid || auth.currentUser?.uid, userMFAMethod);
+      }
+      // MFA verification successful
+      setScreen('success');
+    } catch (error) {
+      setAuthError('Failed to trust device. Continuing without device trust.');
+      setScreen('success');
+    }
+  };
+
+  const handleMFAVerifyFailed = (result) => {
+    setAuthError(result.message || 'MFA verification failed. Please try again.');
+  };
+
+  const handleResendOTP = async () => {
+    try {
+      // In production, call sendOTP from mfaHelper
+      // For now, show message
+      setAuthError(''); // Clear error
+      alert('OTP resent to ' + userMFAMethod === 'sms' ? 'your phone' : 'your email');
+    } catch (error) {
+      setAuthError('Failed to resend OTP');
     }
   };
 
@@ -355,6 +628,32 @@ function AuthScreen() {
     <button className="auth-primary" onClick={() => setScreen('signup')}>Get started <ArrowUpRight size={18}/></button>
     <button className="auth-secondary" onClick={() => setScreen('signin')}>I already have an account</button>
     <p className="auth-privacy"><LockKeyhole size={14}/>Private, encrypted, and always yours</p>
+  </section></main>;
+
+  if (screen === 'mfa-verify') return <main className="auth-shell"><section className="auth-card form-card verify-card">
+    <button className="back-button" onClick={() => { setScreen('verify'); setCode(''); }}><ArrowLeft size={20}/></button><AuthBrand compact />
+    <MFAVerification
+      userId={auth.currentUser?.uid}
+      sessionId={mfaSessionId}
+      method={userMFAMethod}
+      onVerifySuccess={handleMFAVerifySuccess}
+      onVerifyFailed={handleMFAVerifyFailed}
+      onUseBackupCode={handleMFAVerifySuccess}
+      onResendOTP={handleResendOTP}
+      onCancel={() => { setScreen('verify'); setCode(''); }}
+    />
+  </section></main>;
+
+  if (screen === 'success') return <main className="auth-shell"><section className="auth-card welcome-card">
+    <AuthBrand />
+    <div style={{ textAlign: 'center', padding: '40px 20px' }}>
+      <div style={{ fontSize: '48px', marginBottom: '20px' }}>✓</div>
+      <h1 style={{ marginBottom: '10px' }}>Access Granted!</h1>
+      <p style={{ color: '#666', marginBottom: '30px' }}>Welcome back to MyFamilyHealth</p>
+      <div style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>
+        <div style={{ width: '30px', height: '30px', border: '3px solid #ddd', borderTop: '3px solid #007bff', borderRadius: '50%' }} />
+      </div>
+    </div>
   </section></main>;
 
   if (screen === 'verify') return <main className="auth-shell"><section className="auth-card form-card verify-card">
@@ -369,6 +668,17 @@ function AuthScreen() {
   return <main className="auth-shell"><section className="auth-card form-card">
     <button className="back-button" onClick={() => setScreen('welcome')}><ArrowLeft size={20}/></button><AuthBrand compact />
     <div className="form-heading"><p className="eyebrow">{screen === 'signup' ? 'WELCOME TO MYFAMILYHEALTH' : 'YOUR HEALTH SPACE'}</p><h1>{title}</h1><p>{screen === 'signup' ? 'Start building your secure health history.' : 'Sign in to see your health story.'}</p></div>
+    {screen === 'signin' && biometricCredentials.length > 0 && (
+      <>
+        <BiometricAuth
+          userCredentials={biometricCredentials}
+          onSuccess={() => {}}
+          onFallback={() => setScreen('signin')}
+          disabled={false}
+        />
+        <div className="divider"><span/>or continue with phone<span/></div>
+      </>
+    )}
     <button className="google-button" onClick={loginWithGoogle}><span className="google-mark" aria-hidden="true"/><span>Continue with Google</span></button>
     <div className="divider"><span/>or continue with phone<span/></div>
     <form onSubmit={submitPhone}><label className="field-label" htmlFor="phone">PHONE NUMBER</label><div className="phone-field"><div className={`country-select ${countryOpen ? 'country-open' : ''}`}><button className="country-trigger" type="button" aria-label="Country code" aria-expanded={countryOpen} onClick={() => setCountryOpen(open => !open)}><span>{countryCode}</span><ChevronDown size={14}/></button>{countryOpen && <div className="country-menu" role="listbox">{countryCodes.map(([country, codeValue]) => <button className={countryCode === codeValue ? 'country-option selected' : 'country-option'} type="button" role="option" aria-selected={countryCode === codeValue} key={`${country}-${codeValue}`} onClick={() => { setCountryCode(codeValue); setCountryOpen(false); }}><span>{country}</span>{countryCode === codeValue && <Check size={14}/>}</button>)}</div>}</div><input id="phone" type="tel" inputMode="tel" placeholder="(555) 000-0000" value={phone} onChange={e => setPhone(e.target.value)} required/></div>
@@ -384,13 +694,13 @@ function AuthBrand({ compact = false }) { return <div className={`auth-brand ${c
 function NotificationPanel() {
   return <section className="notification-panel" aria-label="Notifications">
     <div className="notification-heading"><div><p className="eyebrow">YOUR UPDATES</p><h2>Notifications</h2></div><span>{notifications.filter(notification => notification.unread).length} unread</span></div>
-    <div className="notification-list">{notifications.map(notification => <article className={`notification-item ${notification.unread ? 'notification-unread' : ''}`} key={notification.id}><span className="notification-icon"><Bell size={15}/></span><div><h3>{notification.title}</h3><p>{notification.detail}</p><small>{notification.time}</small></div>{notification.unread && <i aria-label="Unread"/>}</article>)}</div>
+    <div className="notification-list">{notifications.map(notification => <article className={`notification-item ${notification.unread ? 'notification-unread' : ''}`} key={notification.id}><span className="notification-icon"><Bell size={15}/></span><div><h3>{escapeText(notification.title)}</h3><p>{escapeText(notification.detail)}</p><small>{notification.time}</small></div>{notification.unread && <i aria-label="Unread"/>}</article>)}</div>
   </section>;
 }
 
 function SearchPanel({ searchTerm, setSearchTerm, submitSearch, chooseExample }) {
   return <section className="search-panel" aria-label="Search health records">
-    <form className="search-panel-input" onSubmit={event => { event.preventDefault(); submitSearch(); }}><Search size={17}/><input autoFocus value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder="Search health records" /></form>
+    <form className="search-panel-input" onSubmit={event => { event.preventDefault(); submitSearch(); }}><Search size={17}/><input autoFocus value={searchTerm} onChange={event => setSearchTerm(sanitizeInput(event.target.value))} placeholder="Search health records" /></form>
     <p className="search-examples-label">TRY A FILTER</p>
     <div className="search-examples">{searchExamples.map(example => <button type="button" key={example} onClick={() => chooseExample(example)}>{example}</button>)}</div>
   </section>;
@@ -419,15 +729,15 @@ function LegalDialog({ page, close }) {
 }
 
 function HomeScreen({ activePerson, setActivePerson, items, onAdd, onViewTimeline, showNotifications, toggleNotifications }) {
-  const personCycle = ['Phalguna Rao BAMMIDI', 'Swetha NAYANI', 'Vinay Kumar DURGAM'];
+  const personCycle = ['My profile', 'Family Member 1', 'Family Member 2'];
   const currentIndex = personCycle.indexOf(activePerson);
   const nextPerson = personCycle[(currentIndex + 1) % personCycle.length];
   const firstName = activePerson.split(' ')[0];
   const initials = activePerson.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase();
   const followUp = {
-    'Phalguna Rao BAMMIDI': ['Review blood work', 'With Dr. Sofia Ramos · Due Sep 16'],
-    'Swetha NAYANI': ['Review knee MRI', 'With Dr. K. Mehta · Due Sep 20'],
-    'Vinay Kumar DURGAM': ['Review CBC panel', 'With Dr. L. Chowdary · Due Sep 18'],
+    'My profile': ['No follow-up scheduled', 'Add a care plan when needed'],
+    'Family Member 1': ['No follow-up scheduled', 'Add a care plan when needed'],
+    'Family Member 2': ['No follow-up scheduled', 'Add a care plan when needed'],
   }[activePerson] || ['No follow-up scheduled', 'Add a care plan when needed'];
 
   return <>
@@ -460,19 +770,19 @@ function TimelinePage({ items, selectedRecord, onSelectRecord, onBack }) {
 
   if (selectedRecord) return <RecordDetailPage record={selectedRecord} onBack={() => onSelectRecord(null)} />;
 
-  return <div className="timeline-page"><button className="settings-back" onClick={onBack}><ArrowLeft size={18}/>Back to home</button><div className="timeline-heading"><p className="eyebrow">YOUR HEALTH STORY</p><h1>Health timeline</h1><p>Move through your care history by month, then open any record for the full visit details.</p></div><div className="timeline-zoom" aria-label="Timeline month filter"><button className={selectedMonth === 'All' ? 'timeline-month active' : 'timeline-month'} onClick={() => setSelectedMonth('All')}>All</button>{months.map(month => <button className={selectedMonth === month ? 'timeline-month active' : 'timeline-month'} key={month} onClick={() => setSelectedMonth(month)}>{month}</button>)}</div><div className="visual-timeline">{visibleItems.length ? visibleItems.map((record, index) => { const date = timelineDate(record); const Icon = record.icon; return <button className="timeline-event" key={`${record.title}-${index}`} onClick={() => onSelectRecord(record)}><span className="timeline-line"/><span className="timeline-dot"/><span className="timeline-date"><b>{date.toLocaleString('en-US', { month: 'short' })}</b><small>{date.getDate()}</small></span><span className="timeline-event-card"><span className={`record-icon ${record.tone}`}><Icon size={17}/></span><span><b>{record.title}</b><small>{record.source}</small></span><ChevronRight size={16}/></span></button>; }) : <div className="empty-search">No records in this month yet.</div>}</div></div>;
+  return <div className="timeline-page"><button className="settings-back" onClick={onBack}><ArrowLeft size={18}/>Back to home</button><div className="timeline-heading"><p className="eyebrow">YOUR HEALTH STORY</p><h1>Health timeline</h1><p>Move through your care history by month, then open any record for the full visit details.</p></div><div className="timeline-zoom" aria-label="Timeline month filter"><button className={selectedMonth === 'All' ? 'timeline-month active' : 'timeline-month'} onClick={() => setSelectedMonth('All')}>All</button>{months.map(month => <button className={selectedMonth === month ? 'timeline-month active' : 'timeline-month'} key={month} onClick={() => setSelectedMonth(month)}>{month}</button>)}</div><div className="visual-timeline">{visibleItems.length ? visibleItems.map((record, index) => { const date = timelineDate(record); const Icon = record.icon; return <button className="timeline-event" key={`${record.title}-${index}`} onClick={() => onSelectRecord(record)}><span className="timeline-line"/><span className="timeline-dot"/><span className="timeline-date"><b>{date.toLocaleString('en-US', { month: 'short' })}</b><small>{date.getDate()}</small></span><span className="timeline-event-card"><span className={`record-icon ${record.tone}`}><Icon size={17}/></span><span><b>{escapeText(record.title)}</b><small>{escapeText(String(record.source || ''))}</small></span><ChevronRight size={16}/></span></button>; }) : <div className="empty-search">No records in this month yet.</div>}</div></div>;
 }
 
 function RecordDetailPage({ record, onBack }) {
   const date = timelineDate(record);
   const Icon = record.icon;
 
-  return <div className="record-detail-page"><button className="settings-back" onClick={onBack}><ArrowLeft size={18}/>Back to timeline</button><div className="record-detail-heading"><span className={`record-icon ${record.tone}`}><Icon size={22}/></span><p className="eyebrow">HEALTH RECORD</p><h1>{record.title}</h1><span>{date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span></div><div className="record-detail-card"><DetailField label="Hospital / clinic" value={record.hospital || record.source}/><DetailField label="Doctor / provider" value={record.doctor || 'Not provided'}/><DetailField label="Amount" value={record.amount || 'Not provided'}/><DetailField label="Notes" value={record.notes || 'No notes added'}/></div></div>;
+  return <div className="record-detail-page"><button className="settings-back" onClick={onBack}><ArrowLeft size={18}/>Back to timeline</button><div className="record-detail-heading"><span className={`record-icon ${record.tone}`}><Icon size={22}/></span><p className="eyebrow">HEALTH RECORD</p><h1>{escapeText(record.title)}</h1><span>{date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span></div><div className="record-detail-card"><DetailField label="Hospital / clinic" value={record.hospital || record.source}/><DetailField label="Doctor / provider" value={record.doctor || 'Not provided'}/><DetailField label="Amount" value={record.amount || 'Not provided'}/><DetailField label="Notes" value={record.notes || 'No notes added'}/></div></div>;
 }
 
-function DetailField({ label, value }) { return <div className="detail-field"><p>{label}</p><b>{value}</b></div>; }
+function DetailField({ label, value }) { return <div className="detail-field"><p>{label}</p><b>{escapeText(String(value || ''))}</b></div>; }
 
-function RecordRow({ record, onOpen }) { const Icon = record.icon; return <button className="record-row" onClick={onOpen}><div className={`record-icon ${record.tone}`}><Icon size={19}/></div><div className="record-copy"><b>{record.title}</b><span>{record.source}</span></div><div className="record-date">{record.date}<ChevronRight size={16}/></div></button> }
+function RecordRow({ record, onOpen }) { const Icon = record.icon; return <button className="record-row" onClick={onOpen}><div className={`record-icon ${record.tone}`}><Icon size={19}/></div><div className="record-copy"><b>{escapeText(record.title)}</b><span>{escapeText(String(record.source || ''))}</span></div><div className="record-date">{record.date}<ChevronRight size={16}/></div></button> }
 
 function RecordsScreen({ items, searchTerm, setSearchTerm, onAdd, onOpenRecord }) {
   const [recordFilter, setRecordFilter] = useState('all');
@@ -524,7 +834,7 @@ function ProfileScreen({ activePerson, profileDetails, onLogout, openSettings, o
   const displayName = profileDetails.fullName || activePerson;
   const initials = displayName.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase();
 
-  return <><div className="profile-hero"><span className="large-avatar">{initials}</span><h1>{displayName}</h1><span>Personal health space</span><button onClick={openEditProfile}>Edit profile</button></div><div className="settings-list">{[[ShieldCheck,'Privacy & security','privacy'],[Bell,'Notifications','notifications'],[Users,'Sharing & family access','sharing'],[FileText,'Export my records','export']].map(([Icon,label,page])=><button key={label} onClick={() => openSettings(page)}><span><Icon size={20}/>{label}</span><ChevronRight size={18}/></button>)}</div><button className="logout-button" onClick={onLogout}><LogOut size={16}/>Log out</button><p className="profile-version">MyFamilyHealth v1.0 · Your data stays yours</p></>;
+  return <><div className="profile-hero"><span className="large-avatar">{initials}</span><h1>{displayName}</h1><span>Personal health space</span><button onClick={openEditProfile}>Edit profile</button></div><div className="settings-list">{[[ShieldCheck,'Privacy & security','privacy'],[ShieldCheck,'Biometric & security','security'],[ShieldCheck,'Two-Factor Auth','mfa'],[Bell,'Notifications','notifications'],[Users,'Sharing & family access','sharing'],[FileText,'Export my records','export']].map(([Icon,label,page])=><button key={label} onClick={() => openSettings(page)}><span><Icon size={20}/>{label}</span><ChevronRight size={18}/></button>)}</div><button className="logout-button" onClick={onLogout}><LogOut size={16}/>Log out</button><p className="profile-version">MyFamilyHealth v1.0 · Your data stays yours</p></>;
 }
 
 function EditProfilePage({ details, onBack, onSave }) {
@@ -534,13 +844,53 @@ function EditProfilePage({ details, onBack, onSave }) {
   return <div className="edit-profile-page"><button className="settings-back" onClick={onBack}><ArrowLeft size={18}/>Back to profile</button><div className="edit-profile-heading"><span className="large-avatar">{form.fullName.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase() || '?'}</span><p className="eyebrow">PROFILE DETAILS</p><h1>Edit profile</h1><p>Keep your demographic and basic health information current.</p></div><form className="profile-form" onSubmit={event => { event.preventDefault(); onSave(form); }}><label htmlFor="profile-full-name">FULL NAME</label><input id="profile-full-name" value={form.fullName} onChange={update('fullName')} required/><div className="profile-form-grid"><div><label htmlFor="profile-dob">DATE OF BIRTH</label><input id="profile-dob" type="date" value={form.dateOfBirth} onChange={update('dateOfBirth')} /></div><div><label htmlFor="profile-gender">GENDER</label><select id="profile-gender" value={form.gender} onChange={update('gender')}><option value="">Select</option><option>Female</option><option>Male</option><option>Non-binary</option><option>Prefer not to say</option></select></div></div><div className="profile-form-grid"><div><label htmlFor="profile-blood">BLOOD GROUP</label><select id="profile-blood" value={form.bloodGroup} onChange={update('bloodGroup')}><option value="">Select</option><option>A+</option><option>A-</option><option>B+</option><option>B-</option><option>AB+</option><option>AB-</option><option>O+</option><option>O-</option></select></div><div><label htmlFor="profile-height">HEIGHT</label><input id="profile-height" value={form.height} onChange={update('height')} placeholder="e.g. 170 cm" /></div></div><label htmlFor="profile-weight">WEIGHT</label><input id="profile-weight" value={form.weight} onChange={update('weight')} placeholder="e.g. 68 kg"/><label htmlFor="profile-emergency">EMERGENCY CONTACT</label><input id="profile-emergency" value={form.emergencyContact} onChange={update('emergencyContact')} placeholder="Name and phone number"/><button className="auth-primary" type="submit"><Check size={18}/>Save profile</button></form></div>;
 }
 
-function SettingsPage({ page, activePerson, items, onBack }) {
+function SettingsPage({ page, activePerson, items, onBack, currentUser, biometricCredentials = [], mfaEnabled = false, mfaMethod = 'sms', mfaSettings = null, onShowMFASetup, onShowMFASettings }) {
   const [privateRecords, setPrivateRecords] = useState(true);
   const [updatesEnabled, setUpdatesEnabled] = useState(true);
   const [remindersEnabled, setRemindersEnabled] = useState(true);
 
+  const handleAddBiometricCredential = async (data) => {
+    if (!currentUser) return;
+    try {
+      // Save to Firestore
+      const userRef = doc(db, 'users', currentUser.uid);
+      const userDoc = await getDoc(userRef);
+      const credentials = userDoc.data()?.biometricCredentials || [];
+      
+      await setDoc(userRef, {
+        biometricCredentials: [
+          ...credentials,
+          {
+            id: `cred_${Date.now()}`,
+            ...data.credential,
+            type: data.type,
+          },
+        ],
+      }, { merge: true });
+    } catch (error) {
+      console.error('Error saving biometric credential:', error);
+    }
+  };
+
+  const handleDeleteBiometricCredential = async (credentialId) => {
+    if (!currentUser) return;
+    try {
+      const userRef = doc(db, 'users', currentUser.uid);
+      const userDoc = await getDoc(userRef);
+      const credentials = userDoc.data()?.biometricCredentials || [];
+      
+      await setDoc(userRef, {
+        biometricCredentials: credentials.filter(cred => cred.id !== credentialId),
+      }, { merge: true });
+    } catch (error) {
+      console.error('Error deleting biometric credential:', error);
+    }
+  };
+
   const pageDetails = {
     privacy: { label: 'PRIVACY & SECURITY', title: 'Privacy & security', description: 'Your health information stays under your control.', icon: ShieldCheck },
+    security: { label: 'SECURITY', title: 'Biometric & authentication', description: 'Manage your biometric credentials and sign-in methods.', icon: ShieldCheck },
+    mfa: { label: 'SECURITY', title: 'Two-Factor Authentication', description: 'Protect your account with an extra layer of security.', icon: ShieldCheck },
     notifications: { label: 'YOUR PREFERENCES', title: 'Notifications', description: 'Choose which updates MyFamilyHealth can send you.', icon: Bell },
     sharing: { label: 'FAMILY ACCESS', title: 'Sharing & family access', description: 'Review how your family profiles are organized.', icon: Users },
     export: { label: 'YOUR DATA', title: 'Export my records', description: 'Download a copy of your health timeline.', icon: FileText },
@@ -559,7 +909,7 @@ function SettingsPage({ page, activePerson, items, onBack }) {
     URL.revokeObjectURL(url);
   };
 
-  return <div className="settings-page"><button className="settings-back" onClick={onBack}><ArrowLeft size={18}/>Back to profile</button><div className="settings-page-heading"><span className="settings-page-icon"><Icon size={21}/></span><p className="eyebrow">{pageDetails.label}</p><h1>{pageDetails.title}</h1><p>{pageDetails.description}</p></div>{page === 'privacy' && <div className="settings-card"><SettingToggle label="Keep records private" detail="Only you can view your health records." value={privateRecords} onChange={setPrivateRecords}/><SettingRow label="Data processing" detail="Document and image reading happens in your browser." /></div>}{page === 'notifications' && <div className="settings-card"><SettingToggle label="Health updates" detail="New records, results, and care activity." value={updatesEnabled} onChange={setUpdatesEnabled}/><SettingToggle label="Appointment reminders" detail="Get reminders for upcoming care." value={remindersEnabled} onChange={setRemindersEnabled}/></div>}{page === 'sharing' && <div className="settings-card"><SettingRow label={activePerson} detail="Personal health space · Owner" /><SettingRow label="Swetha NAYANI" detail="Family profile · Private by default" /><SettingRow label="Vinay Kumar DURGAM" detail="Family profile · Private by default" /></div>}{page === 'export' && <div className="settings-card export-card"><SettingRow label="Health timeline" detail={`${items.length} records ready to export`} /><button className="export-action" onClick={exportRecords}><FileText size={17}/>Download CSV export</button><p className="settings-note"><ShieldCheck size={14}/>Your export is generated on this device.</p></div>}</div>;
+  return <div className="settings-page"><button className="settings-back" onClick={onBack}><ArrowLeft size={18}/>Back to profile</button><div className="settings-page-heading"><span className="settings-page-icon"><Icon size={21}/></span><p className="eyebrow">{pageDetails.label}</p><h1>{pageDetails.title}</h1><p>{pageDetails.description}</p></div>{page === 'privacy' && <div className="settings-card"><SettingToggle label="Keep records private" detail="Only you can view your health records." value={privateRecords} onChange={setPrivateRecords}/><SettingRow label="Data processing" detail="Document and image reading happens in your browser." /></div>}{page === 'security' && <div className="settings-card"><BiometricSettings userId={currentUser?.uid} userName={currentUser?.email} userDisplayName={currentUser?.displayName} credentials={biometricCredentials} onAddCredential={handleAddBiometricCredential} onDeleteCredential={handleDeleteBiometricCredential} /></div>}{page === 'mfa' && <div className="settings-card"><MFASettings userId={currentUser?.uid} mfaEnabled={mfaEnabled} mfaMethod={mfaMethod} onMethodChange={(method) => { setMFAMethod(method); }} onDisableMFA={() => { setMFAEnabled(false); }} onEnableMFA={onShowMFASetup} onClose={onBack} /></div>}{page === 'notifications' && <div className="settings-card"><SettingToggle label="Health updates" detail="New records, results, and care activity." value={updatesEnabled} onChange={setUpdatesEnabled}/><SettingToggle label="Appointment reminders" detail="Get reminders for upcoming care." value={remindersEnabled} onChange={setRemindersEnabled}/></div>}{page === 'sharing' && <div className="settings-card"><SettingRow label={activePerson} detail="Personal health space · Owner" /><SettingRow label="Family Member 1" detail="Family profile · Private by default" /><SettingRow label="Family Member 2" detail="Family profile · Private by default" /></div>}{page === 'export' && <div className="settings-card export-card"><SettingRow label="Health timeline" detail={`${items.length} records ready to export`} /><button className="export-action" onClick={exportRecords}><FileText size={17}/>Download CSV export</button><p className="settings-note"><ShieldCheck size={14}/>Your export is generated on this device.</p></div>}</div>;
 }
 
 function SettingToggle({ label, detail, value, onChange }) { return <div className="setting-row"><span><b>{label}</b><small>{detail}</small></span><button className={`setting-toggle ${value ? 'toggle-on' : ''}`} onClick={() => onChange(!value)} aria-pressed={value} aria-label={`${label}: ${value ? 'on' : 'off'}`}><i/></button></div>; }
@@ -578,7 +928,11 @@ function AddSheet({ close, addRecord }) {
   };
 
   const setField = (field) => (event) => {
-    const value = event.target.value;
+    let value = event.target.value;
+    // Sanitize text input to prevent XSS attacks
+    if (field !== 'visitDate' && field !== 'amount' && typeof value === 'string') {
+      value = sanitizeInput(value);
+    }
     setForm((current) => ({ ...current, [field]: value }));
   };
 
@@ -636,7 +990,7 @@ function AddSheet({ close, addRecord }) {
     <input ref={scanInputRef} className="hidden-file-input" type="file" accept="image/*" capture="environment" onChange={(event) => handleFileUpload(event, 'Scan')} />
     <input ref={uploadInputRef} className="hidden-file-input" type="file" accept=".pdf,image/*" onChange={(event) => handleFileUpload(event, 'Upload')} />
     <div className="message-import-box">
-      <div className="field-group"><label htmlFor="message-import">Read from messages</label><textarea id="message-import" rows="3" value={messageText} onChange={(e) => setMessageText(e.target.value)} placeholder="Example: 'Hospital: Mercy Heart Center. Doctor: Dr. A. Nair. Paid $260 on Sep 03.'" /></div>
+      <div className="field-group"><label htmlFor="message-import">Read from messages</label><textarea id="message-import" rows="3" value={messageText} onChange={(e) => setMessageText(sanitizeInput(e.target.value))} placeholder="Example: 'Hospital: Mercy Heart Center. Doctor: Dr. A. Nair. Paid $260 on Sep 03.'" /></div>
       <button className="message-import-button" type="button" onClick={importFromMessage}>Auto-fill from message</button>
     </div>
     <div className="file-import-box">
@@ -654,6 +1008,11 @@ function AddSheet({ close, addRecord }) {
       <div className="field-group"><label htmlFor="notes">Notes</label><textarea id="notes" rows="3" value={form.notes} onChange={setField('notes')} placeholder="Symptoms, treatment plan, or follow-up details" /></div>
     </div>
     <div className="sheet-actions"><button className="sheet-secondary" type="button" onClick={close}>Cancel</button><button className="auth-primary" type="button" onClick={saveRecord}>Save record <Check size={18}/></button></div>
-    <p className="sheet-security"><LockKeyhole size={14}/>Encrypted and private by design</p></div></div> }
+    <p className="sheet-security"><LockKeyhole size={14}/>Encrypted and private by design</p></div></div>
+  };
 
-createRoot(document.getElementById('root')).render(<App />);
+createRoot(document.getElementById('root')).render(
+  <ErrorBoundary>
+    <App />
+  </ErrorBoundary>
+);

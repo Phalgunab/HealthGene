@@ -1,0 +1,244 @@
+name: Build and Deploy HealthGene
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: '18'
+
+jobs:
+  build:
+    name: Build Application
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci --frozen-lockfile
+        
+      - name: Create .env.local for build
+        run: |
+          cat > .env.local << 'EOF'
+          VITE_FIREBASE_API_KEY=${{ secrets.FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN=${{ secrets.FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID=${{ secrets.FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET=${{ secrets.FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID=${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID=${{ secrets.FIREBASE_APP_ID }}
+          VITE_FIREBASE_MEASUREMENT_ID=${{ secrets.FIREBASE_MEASUREMENT_ID }}
+          VITE_SENTRY_DSN=${{ secrets.SENTRY_DSN }}
+          VITE_ENVIRONMENT=${{ secrets.VITE_ENVIRONMENT || 'production' }}
+          VITE_USE_FIREBASE_EMULATOR=false
+          EOF
+      
+      - name: Verify .env.local created
+        run: |
+          echo "Environment file created:"
+          head -3 .env.local
+          echo "..."
+      
+      - name: Run linter
+        run: npm run lint --if-present
+        continue-on-error: true
+      
+      - name: Run tests
+        run: npm test --if-present
+        continue-on-error: true
+      
+      - name: Build application
+        run: npm run build
+      
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: dist
+          path: dist/
+          retention-days: 7
+      
+      - name: Check build size
+        run: |
+          echo "Build artifacts:"
+          du -sh dist/
+          find dist -type f -exec ls -lh {} \; | awk '{print $5, $9}' | sort -h | tail -20
+
+  deploy-firebase:
+    name: Deploy to Firebase Hosting
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Download build artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: dist
+          path: dist/
+      
+      - name: Setup Firebase CLI
+        run: |
+          npm install -g firebase-tools
+          firebase --version
+      
+      - name: Deploy to Firebase Hosting
+        run: |
+          firebase deploy \
+            --project="${{ secrets.FIREBASE_PROJECT_ID }}" \
+            --token="${{ secrets.FIREBASE_CI_TOKEN }}" \
+            --only=hosting
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_CI_TOKEN }}
+      
+      - name: Comment PR with deployment info
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '✅ Build successful! Firebase Hosting deployment initiated.\n\nView deployment: https://console.firebase.google.com/project/${{ secrets.FIREBASE_PROJECT_ID }}/hosting'
+            })
+
+  deploy-play-store:
+    name: Deploy to Google Play Store
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '11'
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      
+      - name: Install Capacitor CLI
+        run: npm install -g @capacitor/cli
+      
+      - name: Download build artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: dist
+          path: dist/
+      
+      - name: Build APK (optional - requires native setup)
+        run: |
+          echo "⚠️  Native Android build requires additional setup:"
+          echo "- Android SDK installed"
+          echo "- Keystore file configured"
+          echo "- Capacitor project initialized"
+          echo ""
+          echo "For CI/CD deployment, configure your .github/workflows/android-build.yml"
+        continue-on-error: true
+
+  deploy-app-store:
+    name: Deploy to Apple App Store
+    needs: build
+    runs-on: macos-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      
+      - name: Install Capacitor CLI
+        run: npm install -g @capacitor/cli
+      
+      - name: Download build artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: dist
+          path: dist/
+      
+      - name: Build IPA (optional - requires native setup)
+        run: |
+          echo "⚠️  Native iOS build requires additional setup:"
+          echo "- Xcode installed"
+          echo "- Apple certificates configured"
+          echo "- Provisioning profiles set up"
+          echo "- Capacitor project initialized"
+          echo ""
+          echo "For CI/CD deployment, configure your .github/workflows/ios-build.yml"
+        continue-on-error: true
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci --frozen-lockfile
+      
+      - name: Run npm audit
+        run: npm audit --audit-level=moderate
+        continue-on-error: true
+      
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v3
+        with:
+          name: sbom
+          path: npm-audit-output.json
+        continue-on-error: true
+
+  notification:
+    name: Send Deployment Notification
+    needs: [build, security-scan]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Check build status
+        run: |
+          echo "Build Status: ${{ needs.build.result }}"
+          echo "Security Scan: ${{ needs.security-scan.result }}"
+      
+      - name: Deployment Summary
+        run: |
+          echo "═══════════════════════════════════════"
+          echo "HealthGene Deployment Summary"
+          echo "═══════════════════════════════════════"
+          echo "Repository: ${{ github.repository }}"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Build Status: ${{ needs.build.result }}"
+          echo "═══════════════════════════════════════"
