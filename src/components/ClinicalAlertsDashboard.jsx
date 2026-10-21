@@ -7,11 +7,12 @@
 import React, { useState, useEffect } from 'react';
 import {
   AlertCircle, CheckCircle2, Info, Zap, TrendingDown, TrendingUp,
-  Filter, Settings, RefreshCw, Clock, ShieldAlert
+  Filter, Settings, RefreshCw, Clock, ShieldAlert, Activity
 } from 'lucide-react';
 import DrugInteractionChecker from './DrugInteractionChecker';
 import LabAbnormalityAlert from './LabAbnormalityAlert';
 import PersonalizedRecommendations from './PersonalizedRecommendations';
+import MedicationAdherenceTracker from './MedicationAdherenceTracker';
 import '../styles/ClinicalAlertsDashboard.css';
 
 const ClinicalAlertsDashboard = ({ userId, medications = [], labResults = [] }) => {
@@ -133,6 +134,12 @@ const ClinicalAlertsDashboard = ({ userId, medications = [], labResults = [] }) 
         >
           <span>Recommendations</span>
         </button>
+        <button
+          className={`tab-button ${activeTab === 'adherence' ? 'active' : ''}`}
+          onClick={() => setActiveTab('adherence')}
+        >
+          <span>Adherence Tracking</span>
+        </button>
       </div>
 
       {/* Tab Content */}
@@ -233,6 +240,15 @@ const ClinicalAlertsDashboard = ({ userId, medications = [], labResults = [] }) 
               conditions={medications.filter(m => typeof m === 'object' && m.indication)}
               medications={medications}
               labAbnormalities={labResults}
+            />
+          </div>
+        )}
+
+        {activeTab === 'adherence' && (
+          <div className="adherence-content">
+            <MedicationAdherenceTracker
+              userId={userId}
+              medications={medications}
             />
           </div>
         )}
