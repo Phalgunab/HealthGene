@@ -16,6 +16,8 @@ import { addDoc, collection, deleteDoc, doc, getDocs, getDoc, setDoc, updateDoc 
 import ClinicalAlertsDashboard from './components/ClinicalAlertsDashboard';
 import ProviderAuthRouter from './components/ProviderAuth/ProviderAuthRouter';
 import ProviderDashboard from './components/ProviderDashboard';
+import AdminAuthRouter from './components/Admin/AdminAuthRouter';
+import AdminPanel from './components/Admin/AdminPanel';
 
 const countryCodes = [
   ['India (+91)', '+91'],
@@ -339,8 +341,10 @@ function App() {
   const [authenticated, setAuthenticated] = useState(false);
   const [authReady, setAuthReady] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
-  const [userType, setUserType] = useState(null); // 'patient' or 'provider'
+  const [userType, setUserType] = useState(null); // 'patient', 'provider', or 'admin'
   const [providerData, setProviderData] = useState(null);
+  const [adminUser, setAdminUser] = useState(null); // Admin user info
+  const [showAdminLogin, setShowAdminLogin] = useState(false); // Show admin login
   const [tab, setTab] = useState('Home');
   const [showAdd, setShowAdd] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
@@ -688,6 +692,36 @@ function App() {
   };
 
   if (!authReady) return null;
+  
+  // Show admin login if requested
+  if (showAdminLogin && !adminUser) {
+    return (
+      <AdminAuthRouter 
+        onAdminLogin={(admin) => {
+          setAdminUser(admin);
+          setUserType('admin');
+          setShowAdminLogin(false);
+        }}
+        onNavigateBack={() => setShowAdminLogin(false)}
+      />
+    );
+  }
+  
+  // Admin dashboard
+  if (userType === 'admin' && adminUser) {
+    return (
+      <AdminPanel 
+        adminName={adminUser.name}
+        onLogout={() => {
+          setAdminUser(null);
+          setUserType(null);
+          setAuthenticated(false);
+          setShowAdminLogin(false);
+        }}
+      />
+    );
+  }
+  
   if (!authenticated) return <AuthScreen />;
   
   // Provider dashboard
@@ -818,6 +852,9 @@ function AuthScreen() {
         </button>
         <button className="auth-secondary" onClick={() => setScreen('signin')}>
           I already have an account
+        </button>
+        <button className="auth-secondary" onClick={() => setShowAdminLogin(true)} style={{ borderColor: '#2d7a3a', color: '#2d7a3a' }}>
+          Admin Portal
         </button>
         <p className="auth-privacy">
           <LockKeyhole size={14}/>Private, encrypted, and always yours
