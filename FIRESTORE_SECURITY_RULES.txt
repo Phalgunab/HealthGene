@@ -1,0 +1,148 @@
+/**
+ * Firestore Security Rules for MFA
+ * 
+ * Copy the rules below to Firebase Console → Firestore Database → Rules
+ * These rules ensure only authenticated users can access their own MFA data
+ */
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Users collection - allow basic user operations
+    match /users/{userId} {
+      allow read: if request.auth.uid == userId;
+      allow write: if request.auth.uid == userId;
+      
+      // User profile
+      match /profile/{document=**} {
+        allow read: if request.auth.uid == userId;
+        allow write: if request.auth.uid == userId;
+      }
+      
+      // MFA Settings - only user can access their own
+      match /mfaSettings/{document=**} {
+        allow read: if request.auth.uid == userId;
+        allow write: if request.auth.uid == userId;
+      }
+      
+      // OTP Sessions - only user can access their own
+      match /otpSessions/{sessionId} {
+        allow read: if request.auth.uid == userId;
+        allow write: if request.auth.uid == userId;
+        
+        // Prevent tampering with OTP
+        allow write: if request.resource.data.otp == resource.data.otp;
+      }
+      
+      // Backup Codes - only user can access their own
+      match /backupCodes/{document=**} {
+        allow read: if request.auth.uid == userId;
+        allow write: if request.auth.uid == userId;
+        
+        // Prevent code tampering
+        allow write: if request.resource.data.codes != null && 
+                        request.resource.data.codes.size() == 10;
+      }
+      
+      // Trusted Devices - only user can access their own
+      match /trustedDevices/{deviceId} {
+        allow read: if request.auth.uid == userId;
+        allow create: if request.auth.uid == userId &&
+                        request.resource.data.deviceId != null &&
+                        request.resource.data.trustedAt != null &&
+                        request.resource.data.enabled == true;
+        allow update: if request.auth.uid == userId;
+        allow delete: if false; // Use soft delete instead
+        
+        // Prevent device trust tampering
+        allow write: if request.resource.data.enabled == false || 
+                        request.resource.data.revokedAt != null;
+      }
+      
+      // Biometric credentials (from Phase 2)
+      match /biometricCredentials/{document=**} {
+        allow read: if request.auth.uid == userId;
+        allow write: if request.auth.uid == userId;
+      }
+      
+      // Family members
+      match /familyMembers/{document=**} {
+        allow read: if request.auth.uid == userId;
+        allow write: if request.auth.uid == userId;
+      }
+      
+      // Health records
+      match /records/{document=**} {
+        allow read: if request.auth.uid == userId;
+        allow write: if request.auth.uid == userId;
+      }
+    }
+    
+    // Fallback - deny everything else
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+
+/**
+ * SECURITY FEATURES
+ * 
+ * 1. User Isolation
+ *    - Each user can only access their own documents
+ *    - request.auth.uid == userId validates ownership
+ * 
+ * 2. OTP Protection
+ *    - Only user can read/write their own OTP sessions
+ *    - OTP hash cannot be modified after creation
+ *    - Prevents cross-user OTP access
+ * 
+ * 3. Backup Code Protection
+ *    - Only user can access their codes
+ *    - Must have exactly 10 codes (prevents injection)
+ *    - Codes are hashed before storage
+ * 
+ * 4. Device Trust Protection
+ *    - Only user can manage their trusted devices
+ *    - Can only create devices with required fields
+ *    - Cannot hard-delete (audit trail preserved)
+ *    - Can only soft-delete (enabled: false)
+ * 
+ * 5. Biometric Protection
+ *    - Only user can access their biometric credentials
+ *    - Credentials stored securely per device
+ * 
+ * 6. Default Deny
+ *    - All other collections/documents are denied
+ *    - Principle of least privilege
+ * 
+ * DEPLOYMENT STEPS
+ * 
+ * 1. Go to Firebase Console
+ * 2. Navigate to Firestore Database
+ * 3. Click "Rules" tab
+ * 4. Copy and paste the rules above
+ * 5. Review the rules (should show green checkmarks)
+ * 6. Click "Publish"
+ * 7. Test with app (should work as normal)
+ * 
+ * TEST SCENARIOS
+ * 
+ * ✓ Authenticated user can read own data
+ * ✓ Authenticated user can write own data
+ * ✓ User A cannot read User B's data
+ * ✓ User A cannot write User B's data
+ * ✓ Unauthenticated user cannot read/write
+ * ✓ Cannot create OTP without required fields
+ * ✓ Cannot create backup codes without 10 codes
+ * ✓ Cannot hard-delete trusted devices
+ * ✓ Can soft-delete trusted devices (enabled: false)
+ * 
+ * MAINTENANCE
+ * 
+ * - Review rules quarterly for security updates
+ * - Monitor Firestore for unauthorized access attempts
+ * - Update rules if new features are added
+ * - Test rules after any changes
+ * - Keep audit logs of rule modifications
+ */

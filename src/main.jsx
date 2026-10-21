@@ -6,12 +6,14 @@ import {
   Activity, ArrowUpRight, Bell, CalendarDays, Camera, ChevronDown, ChevronRight,
   FileText, HeartPulse, Home, Image, LockKeyhole, MoreHorizontal, Plus,
   Search, Settings, ShieldCheck, Sparkles, Upload, Users, X, ArrowLeft, Check, Smartphone, LogOut,
-  FlaskConical, Thermometer, Stethoscope, Pill, Syringe, ScanLine, ZoomIn, ZoomOut, Scissors, BedDouble
+  FlaskConical, Thermometer, Stethoscope, Pill, Syringe, ScanLine, ZoomIn, ZoomOut, Scissors, BedDouble,
+  ShieldAlert
 } from 'lucide-react';
 import './styles.css';
 import { auth, db, googleProvider } from './firebase';
 import { onAuthStateChanged, RecaptchaVerifier, signInWithPhoneNumber, signInWithPopup, signOut } from 'firebase/auth';
 import { addDoc, collection, deleteDoc, doc, getDocs, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import ClinicalAlertsDashboard from './components/ClinicalAlertsDashboard';
 
 const countryCodes = [
   ['India (+91)', '+91'],
@@ -370,6 +372,23 @@ function App() {
   const ownerInitials = profileDetails.fullName ? profileDetails.fullName.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase() : '';
   const activeInitials = activePerson.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase();
 
+  // Extract medications and lab results from items for Clinical Alerts Dashboard
+  const dashboardData = {
+    medications: items.filter(item => 
+      getHealthNodeType(item) === 'medication' || 
+      item.type === 'Medication' ||
+      (item.notes && item.notes.toLowerCase().includes('medication')) ||
+      (item.title && item.title.toLowerCase().includes('medication'))
+    ),
+    labResults: items.filter(item =>
+      getHealthNodeType(item) === 'blood' ||
+      getHealthNodeType(item) === 'lab' ||
+      item.type === 'Lab' ||
+      (item.notes && (item.notes.toLowerCase().includes('lab') || item.notes.toLowerCase().includes('blood'))) ||
+      (item.title && (item.title.toLowerCase().includes('lab') || item.title.toLowerCase().includes('blood')))
+    )
+  };
+
   useEffect(() => onAuthStateChanged(auth, (user) => {
     setCurrentUser(user);
     setAuthenticated(Boolean(user));
@@ -650,12 +669,13 @@ function App() {
       <div className="content">
         {tab === 'Home' && (showTimeline ? (editingRecord ? <EditRecordPage record={editingRecord} onBack={() => setEditingRecord(null)} onSave={(updates) => updateRecord(editingRecord.id, updates)} primaryMemberName={profileDetails.fullName} familyList={familyList} /> : <TimelinePage items={items} selectedRecord={timelineRecord} onSelectRecord={setTimelineRecord} onEdit={() => setEditingRecord(timelineRecord)} onDelete={deleteRecord} onBack={() => { setShowTimeline(false); setTimelineRecord(null); }} activePerson={activePerson} primaryMemberName={profileDetails.fullName} />) : recordDetail ? (editingRecord ? <EditRecordPage record={editingRecord} onBack={() => setEditingRecord(null)} onSave={(updates) => updateRecord(editingRecord.id, updates)} primaryMemberName={profileDetails.fullName} familyList={familyList} /> : <RecordDetailPage record={recordDetail} onEdit={() => setEditingRecord(recordDetail)} onDelete={deleteRecord} onBack={() => setRecordDetail(null)} />) : <HomeScreen activePerson={activePerson} setActivePerson={setActivePerson} primaryMemberName={profileDetails.fullName} familyList={familyList} items={items} notifications={notifications} onMarkNotificationAsRead={markNotificationAsRead} onAdd={() => setShowAdd(true)} onViewTimeline={() => setShowTimeline(true)} onOpenRecord={setRecordDetail} showNotifications={showNotifications} showReadNotifications={showReadNotifications} setShowReadNotifications={setShowReadNotifications} unreadNotificationPage={unreadNotificationPage} setUnreadNotificationPage={setUnreadNotificationPage} readNotificationPage={readNotificationPage} setReadNotificationPage={setReadNotificationPage} toggleNotifications={() => setShowNotifications(open => !open)} />)}
         {tab === 'Records' && (recordDetail ? (editingRecord ? <EditRecordPage record={editingRecord} onBack={() => setEditingRecord(null)} onSave={(updates) => updateRecord(editingRecord.id, updates)} primaryMemberName={profileDetails.fullName} familyList={familyList} /> : <RecordDetailPage record={recordDetail} onEdit={() => setEditingRecord(recordDetail)} onDelete={deleteRecord} onBack={() => setRecordDetail(null)} />) : <RecordsScreen items={items} searchTerm={searchTerm} setSearchTerm={setSearchTerm} onAdd={() => setShowAdd(true)} onOpenRecord={setRecordDetail} activePerson={activePerson} primaryMemberName={profileDetails.fullName} />)}
+        {tab === 'Alerts' && <ClinicalAlertsDashboard userId={profileDetails.id} medications={dashboardData?.medications || []} labResults={dashboardData?.labResults || []} />}
         {tab === 'Family' && (showAddFamily ? <AddFamilyMemberPage onBack={() => setShowAddFamily(false)} onSave={addFamilyMember} /> : editingMember ? <EditFamilyMemberPage member={editingMember} onBack={() => setEditingMember(null)} onSave={(updatedMember) => updateFamilyMember(updatedMember, editingMember.name)} onDelete={() => deleteFamilyMember(editingMember)} /> : <FamilyScreen activePerson={activePerson} setActivePerson={setActivePerson} primaryMemberName={profileDetails.fullName} familyList={familyList} items={items} onAddMember={() => setShowAddFamily(true)} onOpenMember={setEditingMember} />)}
         {tab === 'Profile' && (editProfile ? <EditProfilePage details={profileDetails} onBack={() => setEditProfile(false)} onSave={saveProfile} /> : settingsPage ? <SettingsPage page={settingsPage} activePerson={activePerson} familyList={familyList} items={items} onBack={() => setSettingsPage(null)} /> : <ProfileScreen activePerson={activePerson} profileDetails={profileDetails} onLogout={() => signOut(auth)} openSettings={setSettingsPage} openEditProfile={() => setEditProfile(true)} />)}
       </div>
 
       <nav className="bottom-nav">
-        {[['Home', Home], ['Records', FileText], ['Family', Users], ['Profile', Settings]].map(([label, Icon]) => <button key={label} onClick={() => { setSettingsPage(null); setEditProfile(false); setShowAddFamily(false); setEditingMember(null); setShowTimeline(false); setTimelineRecord(null); setRecordDetail(null); setEditingRecord(null); setTab(label); }} className={tab === label ? 'nav-active' : ''}><Icon size={20}/><span>{label}</span></button>)}
+        {[['Home', Home], ['Records', FileText], ['Alerts', ShieldAlert], ['Family', Users], ['Profile', Settings]].map(([label, Icon]) => <button key={label} onClick={() => { setSettingsPage(null); setEditProfile(false); setShowAddFamily(false); setEditingMember(null); setShowTimeline(false); setTimelineRecord(null); setRecordDetail(null); setEditingRecord(null); setTab(label); }} className={tab === label ? 'nav-active' : ''}><Icon size={20}/><span>{label}</span></button>)}
       </nav>
 
       {showAdd && <AddHealthRecordPage close={() => setShowAdd(false)} addRecord={addRecord} primaryMemberName={profileDetails.fullName} familyList={familyList} />}
